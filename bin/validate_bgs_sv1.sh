@@ -4,6 +4,7 @@ import numpy as np
 import astropy.io.fits as fits
 import pylab as pl
 import astropy
+import matplotlib.pyplot as plt
 
 from   pathlib import Path
 from   astropy.table import Table, vstack, join 
@@ -12,6 +13,7 @@ from   astropy.table import Table, vstack, join
 from   desitarget.sv1.sv1_targetmask import desi_mask as sv1_desi_mask
 from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
 from   pkg_resources                 import resource_filename
+from   badz                          import is_badz
 
 # [BGS_FAINT,           0, "BGS faint targets",              {obsconditions: BRIGHT|GRAY|DARK}]
 # [BGS_BRIGHT,          1, "BGS bright targets",             {obsconditions: BRIGHT}]
@@ -21,18 +23,25 @@ from   pkg_resources                 import resource_filename
 
 # https://github.com/desihub/desitarget/blob/master/doc/nb/target-selection-bits-and-bitmasks.ipynb
 
-write = False
+write   = False
 
 # Use truth catalogue to check z success.
-truth = True
+truth   = True
+verbose = True
+qa      = True
 
-epath = resource_filename('bgs-cmxsv', 'dat/sv1-exposures.fits')
-exps  = Table.read(epath)
-exps  = exps[exps['TARGETS'] == 'BGS+MWS']
+epath   = resource_filename('bgs-cmxsv', 'dat/sv1-exposures.fits')
+exps    = Table.read(epath)
+exps    = exps[exps['TARGETS'] == 'BGS+MWS']
 
-tiles = np.unique(exps['TILEID'].data)
+tiles   = np.unique(exps['TILEID'].data)
 
 # TILEID  NIGHT  EXPID
+conds          = exps['TILEID', 'NIGHT', 'GFA_TRANSPARENCY_MED', 'GFA_FWHM_ASEC_MED', 'GFA_SKY_MAG_AB_MED']
+conds_grouped  = conds.group_by(['TILEID', 'NIGHT'])
+conds_binned   = conds_grouped.groups.aggregate(np.mean)
+conds          = conds_binned
+
 exps           = exps['TILEID', 'NIGHT', 'TILERA', 'TILEDEC', 'EXPTIME', 'B_DEPTH', 'R_DEPTH', 'Z_DEPTH']
 exps['NEXP']   = 1
 
@@ -44,7 +53,9 @@ exps           = exps_binned
 
 exps           = exps['TILEID', 'NIGHT', 'NEXP', 'EXPTIME', 'B_DEPTH', 'R_DEPTH', 'Z_DEPTH']
 exps           = join(exps, tinfo, keys='TILEID', join_type='left')
-  
+
+exps           = join(exps, conds, keys=['TILEID', 'NIGHT'], join_type='left')
+
 exps.sort('TILEID')
 
 exps['NBGSA'] = 0
@@ -61,7 +72,7 @@ nights        = np.unique(exps['NIGHT'].data).astype(np.int)
 
 truth_cache = {}
 
-def truth_test(tileid, cat):
+def truth_test(tileid, cat, ax=None):
   if tileid not in truth_cache.keys():  
     truth       = Table.read('/global/homes/m/mjwilson/desi/SV1/spectra/truth/bgs_deep_truth_{}.fits'.format(tileid))
     truth.sort('TARGETID')
@@ -83,11 +94,25 @@ def truth_test(tileid, cat):
 
   badz       = np.zeros(len(cat)).astype(bool)
 
-  if (len(cat[in_truth]) > 0) & (len(truth) > 0):  
-      badz[in_truth] = np.abs(cat['Z'][in_truth] - truth['Z']) > 2. * cat['ZERR'][in_truth]
-
-  return  badz
+  assert  np.all(cat['TARGETID'][in_truth] == truth['TARGETID'])
   
+  badz[in_truth] = np.abs(cat['Z'][in_truth] - truth['Z']) > 2. * cat['ZERR'][in_truth]
+  
+  if ax is not None: 
+    drop = is_badz(cat[in_truth])
+    
+    ax.plot(truth['Z'][~drop], cat['Z'][in_truth][~drop], marker='.', c='k', lw=0.0, markersize=2)
+        
+    ax.set_xlabel(r'$z_{\rm{deep}}$')
+    ax.set_ylabel(r'$z_{\rm{nightly}}$')
+    
+  return  badz
+
+if qa:
+  fig, ax = plt.subplots(1, 1, figsize=(5,5))
+
+else:
+  ax = None
   
 for tileid in tiles:
   nights      = np.unique(exps[exps['TILEID'] == tileid]['NIGHT'])
@@ -144,6 +169,8 @@ for tileid in tiles:
             
             #
             deep     = deep[~badbgs]
+
+            print('{} BGS ASSIGNED.'.format(len(deep)))
             
             # Assigned BGS, e.g. 3259 for 80614 here: https://data.desi.lbl.gov/desi/users/raichoor/fiberassign-sv1/sv1-per-tile/index.html#tile-nexp-design
             exps['NBGSA'][(exps['TILEID'] == tileid) & (exps['NIGHT'] == night)] += len(deep)
@@ -159,14 +186,18 @@ for tileid in tiles:
             deep     = deep[~badfiber]
 
             exps['NBGSW'][(exps['TILEID'] == tileid) & (exps['NIGHT'] == night)] += len(deep)
+
+            print('{} BGS WORKING FIBER.'.format(len(deep)))
             
             # Good redshifts (in deep)
-            badz     = (deep['ZWARN'] > 0) | (deep['DELTACHI2'] < 40.) | (deep['SPECTYPE'] == 'STAR')
-            badz     =  badz | (deep['Z'] < 0.0) | (deep['Z'] > 0.6)
-            badz     =  badz | (deep['ZERR'] > (0.0005 * (1. + deep['Z'])))
+            badz     = is_badz(deep, verbose=verbose)
             
             if truth:
-                badz = badz | truth_test(tileid, deep)
+                badz_truth = truth_test(tileid, deep, ax=ax)
+              
+                print('LOST {} ON TRUTH CUT.'.format(np.count_nonzero(~badz & badz_truth)))
+              
+                badz = badz | badz_truth
   
             #
             deep['BGS_SUCCESS'] = ~badz
@@ -177,13 +208,15 @@ for tileid in tiles:
             
                 deep.write('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}/bgs-zbest-{}-{}-{}.fits'.format(tileid, night, petal, tileid, night), overwrite=True)
             
-            deep     = deep[~badz]
+            deep = deep[~badz]
                         
-            for label, lost in zip(['FIBER', 'BGS', 'Z'], [badfiber, badbgs, badz]):
+            for label, lost in zip(['FIBER', 'BGS', 'REDSHIFT'], [badfiber, badbgs, badz]):
                 print('LOST {} on {} cut'.format(np.count_nonzero(lost), label))
                 
             exps['NBGSZ'][(exps['TILEID'] == tileid) & (exps['NIGHT'] == night)] += len(deep)
 
+            print('{} GOOD BGS.'.format(len(deep)))
+            
         else:
             print('Failed to retrieve {}.'.format(path)) 
             
@@ -195,4 +228,22 @@ print('\n\n')
 
 exps.pprint(max_lines=-1)
 
+if qa:
+    pl.show()
+ 
+    pl.clf()
+   
+    pl.semilogx(exps['B_DEPTH'], exps['BGSSUCCESS_%'].data.astype(np.float), c='b', marker='.', lw=0.0, label='B')
+    pl.semilogx(exps['R_DEPTH'], exps['BGSSUCCESS_%'].data.astype(np.float), c='g', marker='.', lw=0.0, label='R')
+    pl.semilogx(exps['Z_DEPTH'], exps['BGSSUCCESS_%'].data.astype(np.float), c='r', marker='.', lw=0.0, label='Z')
+
+    pl.xlabel('EFF. DEPTH  [S]')
+    pl.ylabel('BGS SUCCESS [%]')
+
+    pl.ylim(0.0, 100.)
+  
+    pl.legend(frameon=False)
+
+    pl.show()
+  
 print('\n\nDone.\n\n')
