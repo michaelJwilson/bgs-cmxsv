@@ -1,0 +1,125 @@
+#!/usr/bin/env python                                                                                                                                                                                                                         
+import os
+import glob
+import numpy as np
+import astropy.io.fits as fits
+import pylab as pl
+import astropy
+import matplotlib.pyplot as plt
+
+from   pathlib import Path
+from   astropy.table import Table, vstack, join
+
+# https://github.com/desihub/desitarget/blob/master/py/desitarget/sv1/data/sv1_targetmask.yaml                                                                                                                                                
+from   desitarget.sv1.sv1_targetmask import desi_mask as sv1_desi_mask
+from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
+from   pkg_resources                 import resource_filename
+from   badz                          import is_badz
+from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
+
+##
+dX2_lim     = 40.
+truth_cache = {}
+
+conds       = Table.read('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/summary.fits')
+
+def good_tile(tileid, night, verbose=True):
+    tile    = conds[(conds['TILEID'] == tileid)]
+    tile    = tile[tile['NIGHT'] == night]
+
+    if len(tile) == 0:
+        raise ValueError('Invalid pairing ({}, {})'.format(tileid, night))
+    
+    good    = tile['GFA_TRANSPARENCY_MED'] > 0.95
+    good    = good & (tile['GFA_FWHM_ASEC_MED'] < 1.4)
+
+    if good & verbose:
+        print('{} \t {} \t {:.4f} \t {:.4f}'.format(tileid, night, tile['GFA_TRANSPARENCY_MED'][0], tile['GFA_FWHM_ASEC_MED'][0]))
+        
+    return  good
+        
+def get_truth(tileid):
+  if tileid not in truth_cache.keys():
+    truth       = Table.read('/global/homes/m/mjwilson/desi/SV1/spectra/truth/bgs_deep_truth_{}.fits'.format(tileid))
+    truth.sort('TARGETID')
+
+    truth_cache[tileid] = truth
+    
+  else:
+    truth = truth_cache[tileid]
+
+  return  truth
+
+##
+dbins     = np.arange(0.0, 3100., 100.)
+
+types     = list(sv1_bgs_mask.names())
+types     = ['BGS_BRIGHT', 'BGS_FAINT', 'BGS_FAINT_EXT', 'BGS_FIBMAG', 'BGS_LOWQ']
+
+ntypes    = len(types)
+
+fig, axes = plt.subplots(3, ntypes, figsize=(5 * ntypes, 15))
+fig.suptitle(r'BGS SV1 $(\Delta \chi^2 > {:.0f})$'.format(dX2_lim))
+
+result    = Table()
+
+zbests    = glob.glob('/global/homes/m/mjwilson/desi/SV1/spectra/bgs-zbest/*/*/*')
+
+for zbest in zbests:
+    # print(zbest)
+    
+    parts   = zbest.split('/')[-1].replace('.fits', '').split('-')
+    night   = np.int(parts[-1])
+    tileid  = np.int(parts[-2])
+            
+    zbest   = Table.read(zbest)
+    truth   = get_truth(tileid)
+
+    is_good = good_tile(tileid, night)
+
+    if not is_good:
+        continue
+    
+    # Limit to certain bgs good redshifts.
+    zbest   = zbest[np.isin(zbest['TARGETID'], truth['TARGETID'])]
+    result  = vstack((result, zbest))
+      
+#
+zbest    = result
+           
+for j, tt in enumerate(types):
+  cut    = (zbest['SV1_BGS_TARGET']  & sv1_bgs_mask[tt]) != 0
+  
+  sample = zbest[cut]
+
+  # Impose strictr dX2 cut. 
+  cut    = sample['DELTACHI2'] < dX2_lim
+  sample['BGS_SUCCESS'][cut] = 0
+  
+  for i, (band, color) in enumerate(zip(['B', 'R', 'Z'], ['b', 'r', 'g'])):
+    sample['IDX']    = np.digitize(sample['{}_DEPTH'.format(band)], bins=dbins)
+
+    sam_grouped      = sample.group_by(['IDX'])
+    sam_mean         = sam_grouped['IDX', 'BGS_SUCCESS', '{}_DEPTH'.format(band)].groups.aggregate(np.mean)
+    # sam_std        = sam_grouped['IDX', 'BGS_SUCCESS'].groups.aggregate(np.std)
+            
+    # sam_binned.pprint()
+
+    axes[i,j].plot(sam_mean['{}_DEPTH'.format(band)].data, 1. - sam_mean['BGS_SUCCESS'].data, marker='.', lw=0.0, markersize=2, c=color, label=band)
+    # axes[i,j].errorbar(sam_mean['{}_DEPTH'.format(band)].data, sam_mean['BGS_SUCCESS'].data, yerr=sam_std['BGS_SUCCESS'].data, fmt='-', c=color)   
+
+    axes[0,j].set_title(tt)
+  
+for i in range(3):
+  for j in range(ntypes):
+    axes[i,j].set_xlim(+0.0, 3000.0)
+    axes[i,j].set_ylim(-0.1,    1.0)
+
+    axes[i,j].legend(loc=1)
+    
+    axes[i,j].fill_between(dbins, np.zeros_like(dbins), 0.05 * np.ones_like(dbins), alpha=0.1, color='k')    
+    axes[-1,j].set_xlabel('Eff. exp. time [s].')
+    
+  axes[i, 0].set_ylabel('Failure fraction')
+  
+pl.show()

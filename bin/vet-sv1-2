@@ -1,0 +1,128 @@
+#!/usr/bin/env python                                                                                                                                                                                                                         
+import os
+import glob
+import numpy as np
+import astropy.io.fits as fits
+import pylab as pl
+import astropy
+import matplotlib.pyplot as plt
+
+from   pathlib import Path
+from   astropy.table import Table, vstack, join
+
+# https://github.com/desihub/desitarget/blob/master/py/desitarget/sv1/data/sv1_targetmask.yaml                                                                                                                                                
+from   desitarget.sv1.sv1_targetmask import desi_mask as sv1_desi_mask
+from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
+from   pkg_resources                 import resource_filename
+from   badz                          import is_badz
+from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
+
+##
+dX2_lim     = 9.
+truth_cache = {}
+
+conds       = Table.read('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/summary.fits')
+
+def good_tile(tileid, night, verbose=False):
+    tile    = conds[(conds['TILEID'] == tileid)]
+    tile    = tile[tile['NIGHT'] == night]
+
+    if len(tile) == 0:
+        raise ValueError('Invalid pairing ({}, {})'.format(tileid, night))
+    
+    good    = tile['GFA_TRANSPARENCY_MED'] > 0.95
+    good    = good & (tile['GFA_FWHM_ASEC_MED'] < 1.8)
+
+    if good & verbose:
+        print('{} \t {} \t {:.4f} \t {:.4f}'.format(tileid, night, tile['GFA_TRANSPARENCY_MED'][0], tile['GFA_FWHM_ASEC_MED'][0]))
+        
+    return  good
+        
+def get_truth(tileid):
+  if tileid not in truth_cache.keys():
+    truth       = Table.read('/global/homes/m/mjwilson/desi/SV1/spectra/truth/bgs_deep_truth_{}.fits'.format(tileid))
+    truth.sort('TARGETID')
+
+    truth_cache[tileid] = truth
+    
+  else:
+    truth = truth_cache[tileid]
+
+  return  truth
+
+# types   = list(sv1_bgs_mask.names())
+types     = ['BGS_BRIGHT', 'BGS_FAINT', 'BGS_FAINT_EXT', 'BGS_FIBMAG', 'BGS_LOWQ']
+
+ntypes    = len(types)
+
+zbests    = glob.glob('/global/homes/m/mjwilson/desi/SV1/spectra/bgs-zbest/*/*/*')
+
+results   = {}
+key       = 0
+
+for zbest in zbests:    
+    parts   = zbest.split('/')[-1].replace('.fits', '').split('-')
+    night   = np.int(parts[-1])
+    tileid  = np.int(parts[-2])
+            
+    zbest   = Table.read(zbest)
+    truth   = get_truth(tileid)
+
+    is_good = good_tile(tileid, night)
+
+    if not is_good:
+        continue
+
+    zbest   = zbest[zbest['BGS_SUCCESS'] > 0]
+    
+    # Impose stricter dX2 cut.  Default is 20.
+    zbest   = zbest[zbest['DELTACHI2'] > dX2_lim]
+       
+    # Limit to certain bgs good redshifts.
+    zbest   = zbest[np.isin(zbest['TARGETID'], truth['TARGETID'])]
+
+    # Handle fluctuating fibstatus in zbest.
+    truth   = truth[np.isin(truth['TARGETID'], zbest['TARGETID'])]
+    
+    results[key] = (tileid, night, zbest, truth)
+
+    print(tileid, night, np.count_nonzero(zbest['BGS_SUCCESS']))
+    
+    key    += 1
+    
+keys = np.sort(np.array([x for x in results.keys()]))
+
+assert not (keys.max() % 5)
+
+fig, axes = plt.subplots(4, 5, figsize=(24, 30))
+fig.suptitle(r'BGS SV1 $(\Delta \chi^2 > {:.0f})$'.format(dX2_lim))
+
+plt.subplots_adjust(wspace=0.4, hspace=0.4)
+
+key = 0
+
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+for i in range(4):
+  for j in range(5):
+    (tileid, night, zbest, truth) = results[key]
+
+    assert  np.all(zbest['TARGETID'] == truth['TARGETID'])
+
+    for tt, c in zip(types, colors):                                                                                                                                                                                                          
+        cut = (zbest['SV1_BGS_TARGET']  & sv1_bgs_mask[tt]) != 0    
+
+        axes[i,j].plot(truth['Z'][cut], zbest['Z'][cut], c=c, marker='.', lw=0.0, markersize=2)
+        
+    axes[i,j].set_title('{} on {}'.format(tileid, night), fontsize=9)
+        
+    axes[i,j].set_xlim(+0.0, 0.6)
+    axes[i,j].set_ylim(-0.1, 2.0)
+
+    axes[-1,j].set_xlabel(r'$z_{\rm deep}$')
+
+    key += 1
+    
+  axes[i, 0].set_ylabel(r'$z_{\rm nightly}$')
+  
+pl.show()

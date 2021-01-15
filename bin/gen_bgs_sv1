@@ -222,6 +222,8 @@ for tileid in tiles:
       Path('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}'.format(tileid, night)).mkdir(parents=True, exist_ok=True)
 
       print('Writing {}.'.format('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}/bgs-zbest-{}-{}.fits'.format(tileid, night, tileid, night)))
+
+      tile_cache[(tileid, night)].sort('TARGETID')
       
       tile_cache[(tileid, night)].write('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}/bgs-zbest-{}-{}.fits'.format(tileid, night, tileid, night), overwrite=True)
 

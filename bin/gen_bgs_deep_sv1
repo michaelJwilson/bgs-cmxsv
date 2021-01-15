@@ -21,7 +21,7 @@ from   badz                          import is_badz
 
 # https://github.com/desihub/desitarget/blob/master/doc/nb/target-selection-bits-and-bitmasks.ipynb
 
-write = True
+write = False
 
 # Get SV1 exposures. 
 epath = resource_filename('bgs-cmxsv', 'dat/sv1-exposures.fits')
