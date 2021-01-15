@@ -23,16 +23,16 @@ from   badz                          import is_badz
 
 # https://github.com/desihub/desitarget/blob/master/doc/nb/target-selection-bits-and-bitmasks.ipynb
 
-write   = False
+write   = True
 
 # Use truth catalogue to check z success.
 truth   = True
 verbose = True
-qa      = True
+qa      = False
 
 epath   = resource_filename('bgs-cmxsv', 'dat/sv1-exposures.fits')
-exps    = Table.read(epath)
-exps    = exps[exps['TARGETS'] == 'BGS+MWS']
+aexps   = Table.read(epath)
+exps    = aexps[aexps['TARGETS'] == 'BGS+MWS']
 
 tiles   = np.unique(exps['TILEID'].data)
 
@@ -113,11 +113,15 @@ if qa:
 
 else:
   ax = None
+
+tile_cache = {}
   
 for tileid in tiles:
   nights      = np.unique(exps[exps['TILEID'] == tileid]['NIGHT'])
 
-  for night in nights:   
+  for night in nights:
+    tile_cache[(tileid, night)] = Table()
+    
     for petal in range(10):
         # /global/cfs/cdirs/desi/users/raichoor/fiberassign-sv1/20201212/fba-080605.fits
         path         = '/global/cfs/cdirs/desi/spectro/redux/blanc/tiles/{}/{}/zbest-{}-{}-{}.fits'.format(tileid, night, petal, tileid, night)
@@ -132,27 +136,22 @@ for tileid in tiles:
             
             zbest    = Table(zbest)
             fmap     = Table(fmap)
-
+            
             print('\n\n{} \t {} \t {} \t ({} \t {})'.format(tileid, night, petal, len(zbest), len(fmap)))
             
-            tinfo    = fmap['TARGETID', 'TARGET_RA', 'TARGET_DEC', 'FLUX_R', 'FIBERFLUX_R', 'PHOTSYS', 'SV1_DESI_TARGET', 'SV1_BGS_TARGET', 'DESI_TARGET', 'BGS_TARGET'] 
+            tinfo    = fmap['TARGETID', 'TARGET_RA', 'TARGET_DEC', 'FLUX_G', 'FLUX_R', 'FLUX_Z', 'FIBERFLUX_G', 'FIBERFLUX_R', 'FIBERFLUX_Z', 'MASKBITS', 'EBV', 'PHOTSYS', 'SV1_DESI_TARGET', 'SV1_BGS_TARGET', 'DESI_TARGET', 'BGS_TARGET'] 
             tinfo    = astropy.table.unique(tinfo, keys='TARGETID')
             
-            # cols = fmap.dtype.names
-            # cols = [x for x in cols if 'DESI_TARGET' in x]
-            # print(tileid, cols)
+            # fmap[TILEID, FIBERSTATUS, EXPID]                                                                                                                                                                                               
+            fmap         = join(fmap['TARGETID', 'EXPID', 'FIBERSTATUS'], aexps['EXPID', 'B_DEPTH', 'R_DEPTH', 'Z_DEPTH'], keys='EXPID', join_type='left')
+            fmap         = fmap[fmap['FIBERSTATUS'] == 0]
 
-            deep     = join(zbest, tinfo, keys='TARGETID', join_type='left')
+            fmap_grouped = fmap.group_by('TARGETID')
+            fmap         = fmap_grouped.groups.aggregate(np.sum)
+
+            deep         = join(zbest, tinfo, keys='TARGETID', join_type='left')
+            deep         = join(deep,   fmap, keys='TARGETID', join_type='left')
             
-            # FIBERSTATUS cut.                                                                                                                                                                                  
-            # fibstat  = fmap['TARGETID', 'FIBERSTATUS']
-            # fibstat  = fibstat.group_by('TARGETID')
-            # fibstat  = fibstat.groups.aggregate(np.all)
-
-            # badfiber = fibstat['FIBERSTATUS']
-
-            # deep     = join(deep, fibstat, keys='TARGETID', join_type='left')
-
             assert  len(deep) == 500
 
             # Limit to BGS.                                                                                                                                                                                                       
@@ -162,10 +161,10 @@ for tileid in tiles:
             nfaint   = (deep['SV1_BGS_TARGET'] & sv1_bgs_mask['BGS_FAINT'])  == 0
             
             # Limit to faint | bright bgs only.
-            badbgs   = badbgs | (nbright & nfaint)
+            # badbgs = badbgs | (nbright & nfaint)
             
             # Limit to bright bgs only.                                                                                                                                                                                               
-            badbgs   = badbgs | nbright
+            # badbgs = badbgs | nbright
             
             #
             deep     = deep[~badbgs]
@@ -185,28 +184,26 @@ for tileid in tiles:
             badfiber = deep['NODATA']
             deep     = deep[~badfiber]
 
+            del deep['NODATA']
+            
             exps['NBGSW'][(exps['TILEID'] == tileid) & (exps['NIGHT'] == night)] += len(deep)
 
             print('{} BGS WORKING FIBER.'.format(len(deep)))
             
-            # Good redshifts (in deep)
-            badz     = is_badz(deep, verbose=verbose)
-            
+            # Good redshifts (in deep);  Purposefully cut dX2 low so can be later refined. 
+            badz     = is_badz(deep, dX2_lim=20., verbose=verbose)
+
             if truth:
                 badz_truth = truth_test(tileid, deep, ax=ax)
               
                 print('LOST {} ON TRUTH CUT.'.format(np.count_nonzero(~badz & badz_truth)))
               
                 badz = badz | badz_truth
-  
-            #
-            deep['BGS_SUCCESS'] = ~badz
 
-            if write:
-                # Write only BGS (bright) on good fibers. 
-                Path('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}'.format(tileid, night)).mkdir(parents=True, exist_ok=True)
-            
-                deep.write('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}/bgs-zbest-{}-{}-{}.fits'.format(tileid, night, petal, tileid, night), overwrite=True)
+            #                                                                                                                                                                                                                                
+            deep['BGS_SUCCESS'] = np.array(~badz).astype(np.int)
+
+            tile_cache[(tileid, night)] = vstack((tile_cache[(tileid, night)], deep))
             
             deep = deep[~badz]
                         
@@ -218,7 +215,18 @@ for tileid in tiles:
             print('{} GOOD BGS.'.format(len(deep)))
             
         else:
-            print('Failed to retrieve {}.'.format(path)) 
+            print('Failed to retrieve {}.'.format(path))
+
+    if write:
+      # Write only BGS (bright) on good fibers.                                                                                                                                                                                      
+      Path('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}'.format(tileid, night)).mkdir(parents=True, exist_ok=True)
+
+      print('Writing {}.'.format('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}/bgs-zbest-{}-{}.fits'.format(tileid, night, tileid, night)))
+      
+      tile_cache[(tileid, night)].write('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/{}/{}/bgs-zbest-{}-{}.fits'.format(tileid, night, tileid, night), overwrite=True)
+
+    else:
+      tile_cache[(tileid, night)].pprint()
             
 exps['BGSSUCCESS_%'] = ['{:.2f}'.format(100. * x['NBGSZ'] / x['NBGSW']) for x in exps]
 
@@ -227,6 +235,8 @@ exps.sort('BGSSUCCESS_%')
 print('\n\n')
 
 exps.pprint(max_lines=-1)
+
+exps.write('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/summary.fits', overwrite=True)
 
 if qa:
     pl.show()
