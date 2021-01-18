@@ -51,8 +51,8 @@ def get_truth(tileid):
   return  truth
 
 ##
-dbin      = 100.
-dbins     = np.arange(0.0, 3100., dbin)
+dbin      = 0.15
+dbins     = np.arange(14., 20.50, dbin)
 
 types     = list(sv1_bgs_mask.names())
 types     = ['BGS_BRIGHT', 'BGS_FAINT', 'BGS_FAINT_EXT', 'BGS_FIBMAG', 'BGS_LOWQ']
