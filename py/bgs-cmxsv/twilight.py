@@ -11,6 +11,7 @@ from    scipy.interpolate import interp1d
 
 import  os
 import  time
+import  glob
 import  argparse
 import  fitsio
 import  desisurvey
@@ -26,7 +27,7 @@ import  specsim.simulator        as      simulator
 import  speclite.filters         as      filters
 import  astropy.units            as      units
 
-from    astropy.table            import  Table
+from    astropy.table            import  Table, vstack
 from    specsim                  import  config
 from    scipy                    import  ndimage
 from    multiprocessing          import  Pool, Array
@@ -101,10 +102,17 @@ if __name__ == '__main__':
     simulator.simulate()
 
     rfilter           = filters.load_filters('decam2014-r')
+
+
+    gfa_files         = glob.glob('/global/cfs/cdirs/desi/users/ameisner/GFA/conditions/offline_all_guide_ccds_SV1-thru_*.fits')
+    gfas              = Table()
     
-    gfas              = resource_filename('bgs-cmxsv', 'dat/offline_all_guide_ccds_SV1-thru_20210111.fits')
-    gfas              = Table.read(gfas)
-    
+    for x in gfa_files:    
+        # gfas        = resource_filename('bgs-cmxsv', 'dat/offline_all_guide_ccds_SV1-thru_20210111.fits')
+        x             = Table.read(x)
+
+        gfas          = vstack((gfas, x))
+        
     #
     gfas              = gfas[gfas['N_SOURCES_FOR_PSF'] > 2]
     gfas              =	gfas[gfas['CONTRAST'] > 2]

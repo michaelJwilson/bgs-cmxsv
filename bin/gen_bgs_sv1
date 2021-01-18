@@ -62,6 +62,12 @@ exps['NBGSA'] = 0
 exps['NBGSW'] = 0
 exps['NBGSZ'] = 0
 
+dexps['ZWARN']     = 0
+dexps['DELTACHI2'] = 0
+dexps['SPECTYPE']  = 0
+dexps['ZRANGE']    = 0
+dexps['ZERR']      = 0
+
 nights        = exps['NIGHT'].data.astype(np.int)
 in_blanc      = nights <= 20201223
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python                                                                                                                                                                                                                         
+#!/usr/bin/env python
 import os
 import glob
 import numpy as np
@@ -15,7 +15,7 @@ from   desitarget.sv1.sv1_targetmask import desi_mask as sv1_desi_mask
 from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
 from   pkg_resources                 import resource_filename
 from   badz                          import is_badz
-from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
+
 
 ##
 dX2_lim     = 40.
@@ -40,29 +40,26 @@ def good_tile(tileid, night, verbose=True):
         
 def get_truth(tileid):
   if tileid not in truth_cache.keys():
-    truth       = Table.read('/global/homes/m/mjwilson/desi/SV1/spectra/truth/bgs_deep_truth_{}.fits'.format(tileid))
-    truth.sort('TARGETID')
+      truth = Table.read('/global/homes/m/mjwilson/desi/SV1/spectra/truth/bgs_deep_truth_{}.fits'.format(tileid))
+      truth.sort('TARGETID')
 
-    truth_cache[tileid] = truth
+      truth_cache[tileid] = truth
     
   else:
-    truth = truth_cache[tileid]
+      truth = truth_cache[tileid]
 
   return  truth
 
 ##
-dbins     = np.arange(0.0, 3100., 100.)
+dbin      = 100.
+dbins     = np.arange(0.0, 3100., dbin)
 
 types     = list(sv1_bgs_mask.names())
 types     = ['BGS_BRIGHT', 'BGS_FAINT', 'BGS_FAINT_EXT', 'BGS_FIBMAG', 'BGS_LOWQ']
 
 ntypes    = len(types)
 
-fig, axes = plt.subplots(3, ntypes, figsize=(5 * ntypes, 15))
-fig.suptitle(r'BGS SV1 $(\Delta \chi^2 > {:.0f})$'.format(dX2_lim))
-
 result    = Table()
-
 zbests    = glob.glob('/global/homes/m/mjwilson/desi/SV1/spectra/bgs-zbest/*/*/*')
 
 for zbest in zbests:
@@ -71,28 +68,61 @@ for zbest in zbests:
     parts   = zbest.split('/')[-1].replace('.fits', '').split('-')
     night   = np.int(parts[-1])
     tileid  = np.int(parts[-2])
-            
-    zbest   = Table.read(zbest)
-    truth   = get_truth(tileid)
 
     is_good = good_tile(tileid, night)
 
     if not is_good:
         continue
     
-    # Limit to certain bgs good redshifts.
+    zbest   = Table.read(zbest)
+    truth   = get_truth(tileid)
+    
+    # Assigned (& working) BGS with a known true z. 
     zbest   = zbest[np.isin(zbest['TARGETID'], truth['TARGETID'])]
     result  = vstack((result, zbest))
-      
+    
+    del truth
+
+# 
+fig, axes   = plt.subplots(1, 3, figsize=(15, 5)) 
+
+# Histogram of n fibers with given eff. depth. 
+for i, (band, color) in enumerate(zip(['B', 'R', 'Z'], ['b', 'r', 'g'])):
+    result['IDX']   = np.digitize(result['{}_DEPTH'.format(band)], bins=dbins)
+    result['COUNT'] = 1
+    
+    result_grouped  = result.group_by(['IDX'])
+
+    result_sum      = result_grouped['IDX', 'COUNT'].groups.aggregate(np.sum)
+    result_mean     = result_grouped['IDX', '{}_DEPTH'.format(band)].groups.aggregate(np.mean)
+
+    axes[i].bar(result_mean['{}_DEPTH'.format(band)], result_sum['COUNT'], width=dbin, label=band, color=color, edgecolor=color, align='center', fill=False)
+
+    axes[i].set_ylim(0.0, 7000.)
+    axes[i].set_xlim(0.0, 3000.)
+
+    axes[i].legend()
+
+    axes[i].set_xlabel('Eff. depth [s]')
+    axes[i].set_ylabel('N Fibers')
+    
+    del result['COUNT']
+
+plt.tight_layout()
+pl.show()
+
+fig, axes = plt.subplots(3, ntypes, figsize=(5 * ntypes, 15))
+fig.suptitle(r'BGS SV1 $(\Delta \chi^2 > {:.0f})$'.format(dX2_lim))
+    
 #
 zbest    = result
            
 for j, tt in enumerate(types):
-  cut    = (zbest['SV1_BGS_TARGET']  & sv1_bgs_mask[tt]) != 0
+  cut    = (zbest['SV1_BGS_TARGET'] & sv1_bgs_mask[tt]) != 0
   
   sample = zbest[cut]
 
-  # Impose strictr dX2 cut. 
+  # Impose stricter dX2 cut. 
   cut    = sample['DELTACHI2'] < dX2_lim
   sample['BGS_SUCCESS'][cut] = 0
   
@@ -118,8 +148,8 @@ for i in range(3):
     axes[i,j].legend(loc=1)
     
     axes[i,j].fill_between(dbins, np.zeros_like(dbins), 0.05 * np.ones_like(dbins), alpha=0.1, color='k')    
-    axes[-1,j].set_xlabel('Eff. exp. time [s].')
+    axes[-1,j].set_xlabel('Fiber eff. exp. time [s].')
     
   axes[i, 0].set_ylabel('Failure fraction')
-  
+
 pl.show()

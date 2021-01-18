@@ -21,21 +21,23 @@ from   badz                          import is_badz
 
 # https://github.com/desihub/desitarget/blob/master/doc/nb/target-selection-bits-and-bitmasks.ipynb
 
-write = False
+write   = False
+
+dX2_lim = 20.
 
 # Get SV1 exposures. 
-epath = resource_filename('bgs-cmxsv', 'dat/sv1-exposures.fits')
-aexps = Table.read(epath)
+epath   = resource_filename('bgs-cmxsv', 'dat/sv1-exposures.fits')
+aexps   = Table.read(epath)
 
 # Limit to BGS. 
-exps  = aexps[aexps['TARGETS'] == 'BGS+MWS']
+exps    = aexps[aexps['TARGETS'] == 'BGS+MWS']
 
-tiles = np.unique(exps['TILEID'].data)
+tiles   = np.unique(exps['TILEID'].data)
 
 # Limit to exposures that made it into deep.  
-dexps = resource_filename('bgs-cmxsv', 'dat/blanc_deep_explist.dat') 
-dexps = np.loadtxt(dexps)
-dexps = exps[np.isin(exps['EXPID'], dexps[:,2])]
+dexps   = resource_filename('bgs-cmxsv', 'dat/blanc_deep_explist.dat') 
+dexps   = np.loadtxt(dexps)
+dexps   = exps[np.isin(exps['EXPID'], dexps[:,2])]
 
 # Calculate summed depth for deep. 
 dexps          = dexps['TILEID', 'TILERA', 'TILEDEC', 'EXPTIME', 'B_DEPTH', 'R_DEPTH', 'Z_DEPTH']
@@ -55,6 +57,12 @@ dexps.sort('EXPTIME')
 dexps['NBGSA'] = 0
 dexps['NBGSW'] = 0
 dexps['NBGSZ'] = 0
+
+dexps['ZWARN']     = 0
+dexps['DELTACHI2'] = 0
+dexps['SPECTYPE']  = 0
+dexps['ZRANGE']    = 0
+dexps['ZERR']      = 0
 
 deep_cache     = {}
 
@@ -125,9 +133,13 @@ for tileid in tiles:
             
             # Assigned to a working fiber.
             dexps['NBGSW'][dexps['TILEID'] == tileid] += len(deep)
-                        
-            badz     = is_badz(deep, dX2_lim=100.)
 
+            # {'ZWARN': 3, 'DELTACHI2': 3, 'SPECTYPE': 8, 'ZRANGE': 15, 'ZERR': 0}
+            badz, summary = is_badz(deep, dX2_lim=dX2_lim, verbose=True, summary=True)
+
+            for label in summary.keys():
+                dexps[label][dexps['TILEID'] == tileid] += summary[label]
+            
             # Good redshifts (in deep)  
             deep     = deep[~badz]
             

@@ -1,4 +1,4 @@
-#!/usr/bin/env python                                                                                                                                                                                                                         
+#!/usr/bin/env python
 import os
 import glob
 import numpy as np
@@ -18,7 +18,9 @@ from   badz                          import is_badz
 from   desitarget.sv1.sv1_targetmask import bgs_mask as sv1_bgs_mask
 
 ##
-dX2_lim     = 9.
+dX2_lim     = 20.
+verbose     = True
+
 truth_cache = {}
 
 conds       = Table.read('/global/cscratch1/sd/mjwilson/desi/SV1/spectra/bgs-zbest/summary.fits')
@@ -73,7 +75,7 @@ for zbest in zbests:
     if not is_good:
         continue
 
-    zbest   = zbest[zbest['BGS_SUCCESS'] > 0]
+    zbest   = zbest[~is_badz(zbest, dX2_lim=dX2_lim, verbose=verbose)]
     
     # Impose stricter dX2 cut.  Default is 20.
     zbest   = zbest[zbest['DELTACHI2'] > dX2_lim]
