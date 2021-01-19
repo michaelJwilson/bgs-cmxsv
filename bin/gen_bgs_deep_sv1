@@ -39,6 +39,8 @@ dexps   = resource_filename('bgs-cmxsv', 'dat/blanc_deep_explist.dat')
 dexps   = np.loadtxt(dexps)
 dexps   = exps[np.isin(exps['EXPID'], dexps[:,2])]
 
+dexps.write(resource_filename('bgs-cmxsv', 'dat/bgs-blanc-exposures.fits'), overwrite=True)
+
 # Calculate summed depth for deep. 
 dexps          = dexps['TILEID', 'TILERA', 'TILEDEC', 'EXPTIME', 'B_DEPTH', 'R_DEPTH', 'Z_DEPTH']
 

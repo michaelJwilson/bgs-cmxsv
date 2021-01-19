@@ -12,7 +12,7 @@ def is_badz(cat, dX2_lim=40., verbose=False, summary=False):
                 (cat['Z'] < 0.0) | (cat['Z'] > 0.6),\
                 cat['ZERR'] > (0.0005 * (1. + cat['Z']))]
 
-    summary  = {}
+    isummary = {}
     
     for label, cut in zip(labels, cuts):
         badz = badz | cut
@@ -20,10 +20,10 @@ def is_badz(cat, dX2_lim=40., verbose=False, summary=False):
         if verbose:
             print('LOST {} TO {} CUT.'.format(np.count_nonzero(cut), label))
 
-        summary[label] = np.count_nonzero(cut)
+        isummary[label] = np.count_nonzero(cut)
 
     if summary:
-        return  badz, summary
+        return  badz, isummary
 
     else:
         return  badz
