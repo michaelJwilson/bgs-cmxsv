@@ -175,7 +175,7 @@ else:
   output_file   = open(output_dir + "/scripts/commands_coadd_allexp_{}.sh".format(night), "w")
   output_rrfile = open(output_dir + "/scripts/commands_rr_allexp_{}.sh".format(night),    "w")
 
-Path(output_dir).mkdir(parents=True, exist_ok=True)
+Path(output_dir + '/scripts/').mkdir(parents=True, exist_ok=True)
 
 ##
 draws = []
