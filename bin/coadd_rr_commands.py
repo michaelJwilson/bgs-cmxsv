@@ -21,6 +21,8 @@ from    pkg_resources        import resource_filename
 
 # os.system('source ./env.sh')
 
+np.random.seed(314)
+
 '''
 Generate coadds and redshifts other than nightly. 
 '''
