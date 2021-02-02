@@ -26,24 +26,26 @@ Generate coadds and redshifts other than nightly.
 '''
 
 # Run date to timestamp output. 
-date          = '20210113'
+date          = '20210202'
 
 redux_dir     = '/global/cfs/cdirs/desi/spectro/redux/blanc/'
-output_dir    = '/global/cscratch1/sd/mjwilson/desi/SV1/spectra/exposures/'
+output_dir    = '/global/cscratch1/sd/mjwilson/desi/SV1/spectra/daily/exposures/'
 
 # number of exposures in a coadded; 1 for single-exposure coadd                                                                                                                                                                             
 ALL           = False   # Overrides n_exp.
 
 n_exp         = 1
-n_node        = 4
+n_node        = 1
 nside         = 512
 
-overwrite     = True
+sampling      = 0.10 
+
+overwrite     = False
 archetypes    = False
 verbose       = False
 
 #
-cpath         = resource_filename('bgs-cmxsv', 'dat/sv1-exposures.fits')
+cpath         = '/global/cfs/cdirs/desi/survey/observations/SV1/sv1-exposures.fits'
 cond          = Table.read(cpath)
 cond          = cond[cond['TARGETS'] == 'BGS+MWS']
 
@@ -65,6 +67,8 @@ for night in nights:
 print('\n')
 
 if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format(date))):
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+  
     ################################## Get list of exposures ##################################
     exposure_dir_list    = []
     
@@ -124,8 +128,8 @@ if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format
             cframes['petal_loc'][index]    = int(header['CAMERA'].strip()[1])
             cframes['program'][index]      = header['PROGRAM']
             cframes['lat'][index]          = header['OBS-LAT']
-            cframes['lon'][index] 	       = header['OBS-LONG']
-            cframes['elv'][index] 	       = header['OBS-ELEV']
+            cframes['lon'][index] 	   = header['OBS-LONG']
+            cframes['elv'][index] 	   = header['OBS-ELEV']
             cframes['exptime'][index]      = header['EXPTIME']
             cframes['ra'][index]           = header['SKYRA']
             cframes['dec'][index]          = header['SKYDEC']
@@ -172,7 +176,10 @@ else:
   output_rrfile = open(output_dir + "/scripts/commands_rr_allexp_{}.sh".format(night),    "w")
 
 Path(output_dir).mkdir(parents=True, exist_ok=True)
-  
+
+##
+draws = []
+
 ##
 for night in nights:
   nightframes   = cframes[cframes['night'] == night]
@@ -222,40 +229,63 @@ for night in nights:
             if (not ALL) & (n_exp == 1):
                 exposure        = os.path.basename(exposure_dir)
 
-                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), night, 'coadd-{}-{}-{}.fits'.format(night, petal_loc, exposure))
+                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), 'spectra-{}-{}-{}.fits'.format(petal_loc, tile, exposure))
 
             elif not ALL:
-                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), night, 'coadd-{}-{}-{}exp-subset-{}.fits'.format(night, petal_loc, n_exp, subset_index))
+                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), 'spectra-{}-{}-{}exp-subset-{}.fits'.format(petal_loc, tile, exposure, subset_index))
 
             else:
-                output_argument = os.path.join(output_dir, 'ALL', str(tileid), night, 'coadd-{}-{}-allexp.fits'.format(night, petal_loc))
+                output_argument = os.path.join(output_dir, 'ALL', str(tileid), night, 'spectra-{}-{}-allexp.fits'.format(petal_loc, tile))
                 
             output_argument_list.append(output_argument)
 
+            sample = np.random.uniform(0.0, 1.0)
+
+            draws.append(sample)
+
+            if sample > sampling:
+              continue
+            
             if os.path.isfile(output_argument) and (not overwrite):
                 print('\nWarninig: {} already exists!\n'.format(output_argument))
                 continue
 
-            # --coadd-cameras  
-            output_file.write('time desi_coadd_spectra -i {} -o {}\n'.format(input_argument, output_argument))
+            output_file.write('desi_group_spectra --inframes {} --outfile {}\n'.format(input_argument, output_argument))
 
+draws = np.array(draws)
+            
 ##
 output_file.close()
         
-for output_argument in output_argument_list:
-    rrdesi_argument_redrock = output_argument.replace('coadd', 'redrock').replace('.fits', '.h5')
-    rrdesi_argument_zbest   = output_argument.replace('coadd', 'zbest')
+for output_argument, sample in zip(output_argument_list, draws):
+    if sample > sampling:
+      continue
+  
+    rrdesi_argument_redrock = output_argument.replace('spectra-', 'rr-').replace('.fits', '.h5')
+    rrdesi_argument_zbest   = output_argument.replace('spectra-', 'zbest-')
 
+    if os.path.isfile(rrdesi_argument_redrock) & os.path.isfile(rrdesi_argument_zbest):
+        print('\nWarninig: {} already exists!\n'.format(rrdesi_argument_redrock))
+        continue
+      
     cmd                     = 'srun -N {} -n {} -c 2 rrdesi_mpi -o {} -z {} {}'.format(n_node, 32 * n_node, rrdesi_argument_redrock, rrdesi_argument_zbest, output_argument)
 
     if archetypes:
       cmd                   = cmd + ' --archetypes /global/common/software/desi/cori/desiconda/20190804-1.3.0-spec/code/redrock-archetypes/master/\n'    
 
     else:
-      cmd                  += '\n'
-      
+      pass
+    
+    # output_argument
+    # /global/cscratch1/sd/mjwilson/desi/SV1/spectra/daily/exposures/NEXP1/80612/spectra-0-80666-00068646.fits
+
+    # $OUTDIR/65008/redrock-2-65008-00055456.log
+    
+    cmd += '  &> {}'.format(rrdesi_argument_redrock.replace('.h5', '.log').replace('rr-', 'redrock-'))
+
+    cmd                  += '\n'
+    
     output_rrfile.write(cmd)
 
-print('\n\nWritten commands bash script to {}/scripts.'.format(output_dir))
-    
+print('\n\n{} exps results in {} rr commands ({}% sampling) in bash script to {}/scripts.'.format(len(output_argument_list), np.count_nonzero(draws <= sampling), 100. * sampling, output_dir))    
 print('\n\nDone.\n\n')
