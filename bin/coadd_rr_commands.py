@@ -54,7 +54,7 @@ cond          = cond[cond['TARGETS'] == 'BGS+MWS']
 nights        = np.unique(cond['NIGHT'].data).astype(str)
 tiles         = np.unique(cond['TILEID'].data)
 
-npetal        = 5
+npetal        = 10
 petals        = list(range(npetal))
 
 print('\n\n\t---  TILES  ---')
@@ -73,7 +73,7 @@ if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format
     Path(output_dir).mkdir(parents=True, exist_ok=True)
   
     ################################## Get list of exposures ##################################
-    exposure_dir_list    = []
+    exposure_dir_list = []
     
     for obsdate in nights:
         exposure_dir_list += glob.glob(os.path.join(redux_dir, 'exposures', obsdate, '*'))
@@ -137,7 +137,7 @@ if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format
             cframes['ra'][index]           = header['SKYRA']
             cframes['dec'][index]          = header['SKYDEC']
             cframes['specgrph'][index]     = header['SPECGRPH']
-
+    '''
     # Sanity check: each petal must have three cframe files.
     for expid in np.unique(cframes['expid']):
         mask_expid = cframes['expid'] == expid
@@ -147,9 +147,9 @@ if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format
 
             if (np.sum(mask) > 0) & (np.sum(mask) != 3):
                 raise  ValueError('EXPID {} PETAL_LOC {} has only {} cframes files'.format(expid, petal_loc, np.sum(mask)))
-
-    print('\n\n')
     
+    print('\n\n')
+    '''
     uids, cnts = np.unique(cframes['expid'], return_counts=True)
 
     cframes.sort(('tileid', 'petal_loc'))
@@ -158,8 +158,17 @@ if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format
 
     cframes.write(output_dir + '/bgs_allcframes_{}.fits'.format(date), format='fits', overwrite=True)
 
+    exit(0)
+   
 ## 
 cframes = Table.read(output_dir + '/bgs_allcframes_{}.fits'.format(date))
+
+print('Found {} nights.'.format(len(np.unique(cframes['night']))))
+print('Found {} tiles.'.format(len(np.unique(cframes['tileid']))))
+print('Found {} exps.'.format(len(np.unique(cframes['expid']))))
+print('Found {} exptimes.'.format(np.unique(cframes['exptime'])))
+
+exit(0)
 
 ## 
 output_argument_list = []
@@ -187,7 +196,7 @@ draws = []
 for night in nights:
   nightframes   = cframes[cframes['night'] == night]
 
-  for tileid in np.unique(nightframes['tileid']):    
+  for tileid in np.unique(nightframes['tileid']):
     for petal_loc in petals: 
         mask                    = (cframes['tileid'] == tileid) & (cframes['petal_loc'] == petal_loc) & (cframes['night'] == night)
 
@@ -232,13 +241,13 @@ for night in nights:
             if (not ALL) & (n_exp == 1):
                 exposure        = os.path.basename(exposure_dir)
 
-                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), 'spectra-{}-{}-{}.fits'.format(petal_loc, tile, exposure))
+                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), 'spectra-{}-{}-{}.fits'.format(petal_loc, tileid, exposure))
 
             elif not ALL:
-                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), 'spectra-{}-{}-{}exp-subset-{}.fits'.format(petal_loc, tile, exposure, subset_index))
+                output_argument = os.path.join(output_dir, 'NEXP{}'.format(n_exp), str(tileid), 'spectra-{}-{}-{}exp-subset-{}.fits'.format(petal_loc, tileid, exposure, subset_index))
 
             else:
-                output_argument = os.path.join(output_dir, 'ALL', str(tileid), night, 'spectra-{}-{}-allexp.fits'.format(petal_loc, tile))
+                output_argument = os.path.join(output_dir, 'ALL', str(tileid), night, 'spectra-{}-{}-allexp.fits'.format(petal_loc, tileid))
                 
             output_argument_list.append(output_argument)
 
@@ -286,7 +295,7 @@ for output_argument, sample in zip(output_argument_list, draws):
     
     cmd += '  &> {}'.format(rrdesi_argument_redrock.replace('.h5', '.log').replace('rr-', 'redrock-'))
 
-    cmd                  += '\n'
+    cmd += '\n'
     
     output_rrfile.write(cmd)
 
