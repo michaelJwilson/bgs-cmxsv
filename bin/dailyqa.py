@@ -3,7 +3,7 @@ import glob
 import numpy as np
 import astropy.io.fits as fits
 
-from astropy.table import Table
+from astropy.table import Table, join
 from desisurvey.utils import get_date
 from get_solar import get_solar
 from desitarget.sv1.sv1_targetmask import desi_mask as sv1_desi_mask
@@ -21,7 +21,7 @@ bgs_dark['PROD'][bgs_dark['NIGHT'].data.astype(np.int) > 20201223] = ''
 # zbest-0-80623-deep.fits;
 deep_ids = [x.split('/')[-2] for x in glob.glob('/global/homes/m/mjwilson/blanc/tiles/*/deep')]
 
-def get_truth(tileid, petal, night, expid):
+def get_truth(tileid, petal, night, expid, verbose=False):
     if tileid in deep_ids:
         return  Table.read('/global/homes/m/mjwilson/blanc/tiles/{}/deep/zbest-{}-{}-deep.fits'.format(tileid, petal, tileid), 'ZBEST')
 
@@ -29,10 +29,21 @@ def get_truth(tileid, petal, night, expid):
         row = bgs_dark[bgs_dark['TILEID'].data == tileid]
 
         if len(row) > 1:
-            print('Found {} in bgs_dark for {}'.format(row['EXPID'].data, tileid))
+            if verbose:
+                print('Found {} in bgs_dark for {} with exptimes {} on nights {} with spec. sky r {}'.format(row['EXPID'].data, tileid, ['{:.1f}'.format(x) for x in row['EXPTIME'].data],\
+                                                                                                             row['NIGHT'].data, ['{:.1f}'.format(x) for x in row['SPECMODEL_SKY_RMAG_AB'].data]))
 
-        row = row[0]
 
+            i=0 
+                
+            while (row['EXPTIME'].data[i] < 300.) | (row['SPECMODEL_SKY_RMAG_AB'].data[i] <= 20.5):
+                i += 1
+
+            row = row[i]
+            
+        else:
+            row = row[0]
+            
         if row['PROD'] == 'blanc':
             try:
                 path = '/global/cscratch1/sd/mjwilson/desi/SV1/spectra/exposures/NEXP1/{}/{}/coadd-{}-{}-{:08d}.fits'.format(tileid, night, night, petal, expid)
@@ -44,7 +55,18 @@ def get_truth(tileid, petal, night, expid):
                 print('Failed on {} in blanc production.'.format(path))
                 
                 return None
-            
+
+        else:
+            try:
+                # 80645/zbest-2-80645-00070961.fits
+                path = '/global/cscratch1/sd/mjwilson/desi/SV1/spectra/daily/exposures/NEXP1/{}/zbest-{}-{}-{:08d}.fits'.format(tileid, petal, tileid, expid)
+                return  Table.read(path, 'ZBEST')
+
+            except:
+                print('Failed on {} in daily production.'.format(path))
+                return None
+
+                
     else:
         print('No truth known for {}.'.format(tileid))
         return None
@@ -95,7 +117,19 @@ for f in zfiles:
     assert (expids == expid)
 
     truth = get_truth(tileid, petal, dates[0], expid)
-    
+
+    if truth is None:
+        continue
+
+    '''
+    truez = truth['TARGETID', 'DELTACHI2', 'Z', 'ZWARN']
+    truez = truez[truez['ZWARN'] == 0]
+    truez = truez[truez['DELTACHI2'] > 100.]
+    truez['TRUZ'] = truez
+
+    del truez['Z']
+    '''
+    #
     ra = row['TILERA']
     dec= row['TILEDEC']
 
@@ -130,6 +164,9 @@ for f in zfiles:
     # Assigned to a good fiber. 
     zbest = zbest[goodfiber]
 
+    # Join with truth.
+    # zbest = join(zbest, truez, keys='TARGETID', join_type='left')
+    
     # Samples assigned to a good fiber. 
     bgs = zbest[np.isin(zbest['TARGETID'], bgsids)]
     bright = zbest[np.isin(zbest['TARGETID'], brightids)]
@@ -143,7 +180,5 @@ for f in zfiles:
                                                                                                                                       row['B_DEPTH'][0], row['R_DEPTH'][0], row['Z_DEPTH'][0],\
                                                                                                                                       solar['AIRMASS'][0], solar['MOONALT'][0], solar['MOONSEP'][0], solar['MOONFRAC'][0],\
                                                                                                                                       100. * len(bgs_goodz) / len(bgs), 100. * len(bright_goodz) / len(bright),\
-                                                                                                                                      100. * len(faint_goodz) / len(faint)))
-
-    
+                                                                                                                                      100. * len(faint_goodz) / len(faint)))    
 print('\n\nDone.\n\n')
