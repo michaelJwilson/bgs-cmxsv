@@ -137,19 +137,7 @@ if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format
             cframes['ra'][index]           = header['SKYRA']
             cframes['dec'][index]          = header['SKYDEC']
             cframes['specgrph'][index]     = header['SPECGRPH']
-    '''
-    # Sanity check: each petal must have three cframe files.
-    for expid in np.unique(cframes['expid']):
-        mask_expid = cframes['expid'] == expid
-    
-        for petal_loc in petals:
-            mask = mask_expid & (cframes['petal_loc'] == petal_loc)
 
-            if (np.sum(mask) > 0) & (np.sum(mask) != 3):
-                raise  ValueError('EXPID {} PETAL_LOC {} has only {} cframes files'.format(expid, petal_loc, np.sum(mask)))
-    
-    print('\n\n')
-    '''
     uids, cnts = np.unique(cframes['expid'], return_counts=True)
 
     cframes.sort(('tileid', 'petal_loc'))
@@ -163,12 +151,30 @@ if overwrite | (not os.path.isfile(output_dir + '/bgs_allcframes_{}.fits'.format
 ## 
 cframes = Table.read(output_dir + '/bgs_allcframes_{}.fits'.format(date))
 
+##  Not in Blanc.
+cframes = cframes[cframes['night'].data.astype(np.int) > 20201223]
+
+## Remove stash.
+keep = ['stash' not in x for x in cframes['cframe']]
+cframes = cframes[keep]
+
 print('Found {} nights.'.format(len(np.unique(cframes['night']))))
 print('Found {} tiles.'.format(len(np.unique(cframes['tileid']))))
 print('Found {} exps.'.format(len(np.unique(cframes['expid']))))
-print('Found {} exptimes.'.format(np.unique(cframes['exptime'])))
+print('Found {} exptimes.'.format(np.unique(np.round(cframes['exptime'].data, decimals=0))))
+print('\n\n')
+print(np.unique(cframes['night'].data))
 
-exit(0)
+# Sanity check: each petal must have three cframe files.                                                                                                                                                                                  
+for expid in np.unique(cframes['expid']):                                                                                                                                                                                                 
+  mask_expid = cframes['expid'] == expid                                                                                                                                                                                                
+  
+  for petal_loc in petals:                                                                                                                                                                                                              
+    mask = mask_expid & (cframes['petal_loc'] == petal_loc)                                                                                                                                                                           
+    
+    if (np.sum(mask) > 0) & (np.sum(mask) != 3):                                                                                                                                                                                      
+      print('Missing arm.')
+      print(cframes[mask])
 
 ## 
 output_argument_list = []
