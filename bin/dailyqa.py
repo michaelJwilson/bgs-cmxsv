@@ -150,7 +150,7 @@ for f in zfiles:
 
     gaia_g = fmap['GAIA_PHOT_G_MEAN_MAG'].data
     rmag = 22.5 - 2.5 * np.log10(fmap['FLUX_R'].data)
-
+    
     # Not in GAIA | (GAIA g - rmag > 0.6)
     # nonstar = (gaia_g == 0.0) | (gaia_g - rmag > 0.6)
     nonstar = np.ones_like(bgs).astype(bool)
@@ -163,6 +163,8 @@ for f in zfiles:
     brightids = fmap['TARGETID'][bright]
     faintids = fmap['TARGETID'][faint]
 
+    exit(0)
+    
     # print(len(bgsids), len(brightids), len(faintids))
     
     #
