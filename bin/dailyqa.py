@@ -123,9 +123,14 @@ for f in zfiles:
 
     truez = truth['TARGETID', 'DELTACHI2', 'Z', 'ZWARN']
     truez = truez[truez['ZWARN'] == 0]
-    truez = truez[truez['DELTACHI2'] > 50.]
+    truez = truez[truez['DELTACHI2'] > 25.]
+    truez = truez[(truez['Z'] > 0.01) & (truez['Z'] < 0.5)]
     truez['TRUEZ'] = truez['Z']
 
+    if len(truez) == 0:
+        print('Excluded {} truth'.format(tileid))
+        continue
+    
     del truez['Z']
     
     #
@@ -147,15 +152,18 @@ for f in zfiles:
     rmag = 22.5 - 2.5 * np.log10(fmap['FLUX_R'].data)
 
     # Not in GAIA | (GAIA g - rmag > 0.6)
-    nonstar = (gaia_g == 0.0) | (gaia_g - rmag > 0.6)
-
+    # nonstar = (gaia_g == 0.0) | (gaia_g - rmag > 0.6)
+    nonstar = np.ones_like(bgs).astype(bool)
+    
     bgs = bgs & nonstar
     bright = bright & nonstar
     faint = faint & nonstar
 
     bgsids = fmap['TARGETID'][bgs]
-    brightids = fmap['TARGETID'][bgs]
-    faintids = fmap['TARGETID'][bgs]
+    brightids = fmap['TARGETID'][bright]
+    faintids = fmap['TARGETID'][faint]
+
+    # print(len(bgsids), len(brightids), len(faintids))
     
     #
     goodfiber = (zbest['ZWARN'] & 2**9) == 0
@@ -163,22 +171,33 @@ for f in zfiles:
     # Assigned to a good fiber. 
     zbest = zbest[goodfiber]
 
-    # Join with truth.
+    # Join with truth in the range of interest.
     zbest = join(zbest, truez['TARGETID', 'TRUEZ'], keys='TARGETID', join_type='left')
+
+    # Limit to known zs in the range of interest on a working fiber.
+    zbest = zbest[~zbest['TRUEZ'].mask]
     
     # Samples assigned to a good fiber. 
     bgs = zbest[np.isin(zbest['TARGETID'], bgsids)]
     bright = zbest[np.isin(zbest['TARGETID'], brightids)]
     faint = zbest[np.isin(zbest['TARGETID'], faintids)]
 
-    bgs_goodz = bgs[(bgs['ZWARN'] == 0) & (bgs['DELTACHI2'] >= 25.)]
-    bright_goodz = bright[(bright['ZWARN'] == 0) & (bright['DELTACHI2'] >= 25.)]
-    faint_goodz = faint[(faint['ZWARN'] == 0) & (faint['DELTACHI2'] >= 25.)]
-    
-    print('{}\t\t{: 4.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.1f}'.format(dates[0], row['EXPTIME'][0], row['GFA_TRANSPARENCY'][0], row['GFA_FWHM_ASEC'][0],\
-                                                                                                                                              row['B_DEPTH'][0], row['R_DEPTH'][0], row['Z_DEPTH'][0],\
-                                                                                                                                              solar['AIRMASS'][0], solar['MOONALT'][0], solar['MOONSEP'][0], solar['MOONFRAC'][0],\
-                                                                                                                                              100. * len(bgs_goodz) / len(bgs), 100. * len(bright_goodz) / len(bright),\
-                                                                                                                                                100. * len(faint_goodz) / len(faint), 100. * np.count_nonzero(zbest['TRUEZ'].mask)/len(zbest)))
-    
+    bgs_goodz = bgs[(bgs['ZWARN'] == 0) & (bgs['DELTACHI2'] >= 25.) & (np.abs(bgs['Z'] - bgs['TRUEZ']) < 0.003335)]
+    bright_goodz = bright[(bright['ZWARN'] == 0) & (bright['DELTACHI2'] >= 25.) & (np.abs(bright['Z'] - bright['TRUEZ']) < 0.003335)]
+    faint_goodz = faint[(faint['ZWARN'] == 0) & (faint['DELTACHI2'] >= 25.) & (np.abs(faint['Z'] - faint['TRUEZ']) < 0.003335)]
+
+    try:
+        toprint = '{}\t\t{: 4.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}'.format(dates[0], row['EXPTIME'][0], row['GFA_TRANSPARENCY'][0], row['GFA_FWHM_ASEC'][0],\
+                                                                                                                                          row['B_DEPTH'][0], row['R_DEPTH'][0], row['Z_DEPTH'][0],\
+                                                                                                                                          solar['AIRMASS'][0], solar['MOONALT'][0], solar['MOONSEP'][0], solar['MOONFRAC'][0],\
+                                                                                                                                          100. * len(bgs_goodz) / len(bgs), 100. * len(bright_goodz) / len(bright),\
+                                                                                                                                          100. * len(faint_goodz) / len(faint))
+
+        toprint += '\t\t{:d}\t{:d}\t{:d}'.format(len(bgs_goodz), len(bright_goodz), len(faint_goodz))
+
+        print(toprint)
+        
+    except:
+        print('Failed on {}'.format(expid))
+
 print('\n\nDone.\n\n')
