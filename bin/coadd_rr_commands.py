@@ -30,7 +30,7 @@ Generate coadds and redshifts other than nightly.
 # Run date to timestamp output. 
 date          = '20210202'
 
-redux_dir     = '/global/cfs/cdirs/desi/spectro/redux/blanc/'
+redux_dir     = '/global/cfs/cdirs/desi/spectro/redux/daily/'
 output_dir    = '/global/cscratch1/sd/mjwilson/desi/SV1/spectra/daily/exposures/'
 
 # number of exposures in a coadded; 1 for single-exposure coadd                                                                                                                                                                             
@@ -54,7 +54,8 @@ cond          = cond[cond['TARGETS'] == 'BGS+MWS']
 nights        = np.unique(cond['NIGHT'].data).astype(str)
 tiles         = np.unique(cond['TILEID'].data)
 
-petals        = list(range(10))
+npetal        = 5
+petals        = list(range(npetal))
 
 print('\n\n\t---  TILES  ---')
 
@@ -164,17 +165,17 @@ cframes = Table.read(output_dir + '/bgs_allcframes_{}.fits'.format(date))
 output_argument_list = []
 
 if not ALL:
-  if (not overwrite) and (os.path.isfile(output_dir + "/scripts/commands_coadd_nexp_{}_{}.sh".format(n_exp, night)) | os.path.isfile(output_dir + "/scripts/commands_rr_nexp_{}_{}.sh".format(n_exp, night))):
+  if (not overwrite) and (os.path.isfile(output_dir + "/scripts/commands_spectra_nexp_{}_{}.sh".format(n_exp, night)) | os.path.isfile(output_dir + "/scripts/commands_rr_nexp_{}_{}.sh".format(n_exp, night))):
     raise  ValueError('Overwrite=True required to remove exisiting files.')
 
-  output_file   = open(output_dir + "/scripts/commands_coadd_nexp_{}_{}.sh".format(n_exp, night), "w")
+  output_file   = open(output_dir + "/scripts/commands_spectra_nexp_{}_{}.sh".format(n_exp, night), "w")
   output_rrfile = open(output_dir + "/scripts/commands_rr_nexp_{}_{}.sh".format(n_exp, night),    "w")
   
 else:
-  if (not overwrite) and (os.path.isfile(output_dir + "/scripts/commands_coadd_allexp_{}.sh".format(night)) | os.path.isfile(output_dir + "/scripts/commands_rr_allexp_{}.sh".format(night))):
+  if (not overwrite) and (os.path.isfile(output_dir + "/scripts/commands_spectra_allexp_{}.sh".format(night)) | os.path.isfile(output_dir + "/scripts/commands_rr_allexp_{}.sh".format(night))):
     raise  ValueError('Overwrite=True required to remove exisiting files.')
   
-  output_file   = open(output_dir + "/scripts/commands_coadd_allexp_{}.sh".format(night), "w")
+  output_file   = open(output_dir + "/scripts/commands_spectra_allexp_{}.sh".format(night), "w")
   output_rrfile = open(output_dir + "/scripts/commands_rr_allexp_{}.sh".format(night),    "w")
 
 Path(output_dir + '/scripts/').mkdir(parents=True, exist_ok=True)
@@ -249,7 +250,7 @@ for night in nights:
               continue
             
             if os.path.isfile(output_argument) and (not overwrite):
-                print('\nWarninig: {} already exists!\n'.format(output_argument))
+                print('\nWarning: {} already exists!\n'.format(output_argument))
                 continue
 
             output_file.write('desi_group_spectra --inframes {} --outfile {}\n'.format(input_argument, output_argument))
@@ -267,7 +268,7 @@ for output_argument, sample in zip(output_argument_list, draws):
     rrdesi_argument_zbest   = output_argument.replace('spectra-', 'zbest-')
 
     if os.path.isfile(rrdesi_argument_redrock) & os.path.isfile(rrdesi_argument_zbest):
-        print('\nWarninig: {} already exists!\n'.format(rrdesi_argument_redrock))
+        print('\nWarning: {} already exists!\n'.format(rrdesi_argument_redrock))
         continue
       
     cmd                     = 'srun -N {} -n {} -c 2 rrdesi_mpi -o {} -z {} {}'.format(n_node, 32 * n_node, rrdesi_argument_redrock, rrdesi_argument_zbest, output_argument)
