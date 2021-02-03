@@ -121,14 +121,13 @@ for f in zfiles:
     if truth is None:
         continue
 
-    '''
     truez = truth['TARGETID', 'DELTACHI2', 'Z', 'ZWARN']
     truez = truez[truez['ZWARN'] == 0]
-    truez = truez[truez['DELTACHI2'] > 100.]
-    truez['TRUZ'] = truez
+    truez = truez[truez['DELTACHI2'] > 50.]
+    truez['TRUEZ'] = truez['Z']
 
     del truez['Z']
-    '''
+    
     #
     ra = row['TILERA']
     dec= row['TILEDEC']
@@ -165,7 +164,7 @@ for f in zfiles:
     zbest = zbest[goodfiber]
 
     # Join with truth.
-    # zbest = join(zbest, truez, keys='TARGETID', join_type='left')
+    zbest = join(zbest, truez['TARGETID', 'TRUEZ'], keys='TARGETID', join_type='left')
     
     # Samples assigned to a good fiber. 
     bgs = zbest[np.isin(zbest['TARGETID'], bgsids)]
@@ -176,9 +175,10 @@ for f in zfiles:
     bright_goodz = bright[(bright['ZWARN'] == 0) & (bright['DELTACHI2'] >= 25.)]
     faint_goodz = faint[(faint['ZWARN'] == 0) & (faint['DELTACHI2'] >= 25.)]
     
-    print('{}\t\t{: 4.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}'.format(dates[0], row['EXPTIME'][0], row['GFA_TRANSPARENCY'][0], row['GFA_FWHM_ASEC'][0],\
-                                                                                                                                      row['B_DEPTH'][0], row['R_DEPTH'][0], row['Z_DEPTH'][0],\
-                                                                                                                                      solar['AIRMASS'][0], solar['MOONALT'][0], solar['MOONSEP'][0], solar['MOONFRAC'][0],\
-                                                                                                                                      100. * len(bgs_goodz) / len(bgs), 100. * len(bright_goodz) / len(bright),\
-                                                                                                                                      100. * len(faint_goodz) / len(faint)))    
+    print('{}\t\t{: 4.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.3f}\t{:.3f}\t{:.3f}\t\t{:.1f}'.format(dates[0], row['EXPTIME'][0], row['GFA_TRANSPARENCY'][0], row['GFA_FWHM_ASEC'][0],\
+                                                                                                                                              row['B_DEPTH'][0], row['R_DEPTH'][0], row['Z_DEPTH'][0],\
+                                                                                                                                              solar['AIRMASS'][0], solar['MOONALT'][0], solar['MOONSEP'][0], solar['MOONFRAC'][0],\
+                                                                                                                                              100. * len(bgs_goodz) / len(bgs), 100. * len(bright_goodz) / len(bright),\
+                                                                                                                                                100. * len(faint_goodz) / len(faint), 100. * np.count_nonzero(zbest['TRUEZ'].mask)/len(zbest)))
+    
 print('\n\nDone.\n\n')
