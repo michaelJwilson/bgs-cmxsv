@@ -38,13 +38,14 @@ parser = argparse.ArgumentParser(usage = "{prog} [options]", description=descrip
 
 # E.g.  /global/cfs/cdirs/desi/sv/bgs/tiles/phaseone/BGS_SV_30_3x_superset60_Apr2020v2.fits
 parser.add_argument("--tiles", type=str, help="input tile file", default=None)
-parser.add_argument("--bright", type=int,  default=0, help="solve for nights with bright time only (irrelevant when including twilight).")
+parser.add_argument("--bright", type=int,  default=0, help="solve for nights with bright time only (irrelevant when including twilight, integer).")
 parser.add_argument("--firstday", type=str,  default=get_date(datetime.now().date().isoformat()), help="first day considered")
 parser.add_argument("--lastday", type=str,  default='2021-02-01', help="last day considered")
 parser.add_argument("--outdir", type=str, required=False, default=None, help="path to output directory.")
 parser.add_argument("--fullmoonnights", type=int,  default=7, help="full moon shut down period (nights)")
-parser.add_argument("--twilight", type=int,  default=0, help="include twilight")
+parser.add_argument("--twilight", type=int,  default=0, help="include twilight, integer.")
 parser.add_argument("--numproc", type=int,  default=4, help="number of processes in multiprocessing (~4-12)")
+parser.add_argument("--airmass", type=np.float,  default=2.0, help="Airmass limit to assume.")
 
 print('\n\nWelcome to up.\n\n')
 
@@ -92,7 +93,16 @@ months           = []
 
 if args.tiles is not None:
     tiles            = Table.read(args.tiles)
-    tiles            = tiles[tiles['IN_DESI'] > 0]
+
+    try:
+      tiles          = tiles[tiles['IN_DESI'] > 0]
+
+    except:
+      print('Warning: failed to restrict to IN_DESI.')
+
+    if 'TILEID' not in tiles.dtype.names:
+      tiles['TILEID'] = np.arange(len(tiles))
+      
     tiles.sort('RA')
 
     ra               = tiles['RA']
@@ -195,7 +205,7 @@ for i in range(num_nights):
         isin      = isin[~too_close]
 
         airmasses = desisurvey.utils.get_airmass(_time, ra[isin] * u.deg, dec[isin] * u.deg)
-        isin      = isin[airmasses < 2.0]
+        isin      = isin[airmasses < args.airmass]
 
         return  True, program, isin
 
