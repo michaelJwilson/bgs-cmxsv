@@ -272,6 +272,10 @@ toprint        = ['TILEID', 'RA', 'DEC'] + [x.upper() for x in months]
 tiles[toprint].pprint(max_width=-1)
 
 if args.shallow:
+  endclock     = time.time()
+
+  print('\n\nDone in {:.2f} seconds.\n\n'.format(endclock - startclock))
+  
   exit(0)
 
 # Write augmented tiles file to args.outdir. 
