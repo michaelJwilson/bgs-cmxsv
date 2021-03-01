@@ -23,10 +23,10 @@ from    desisurvey.utils         import  local_noon_on_date, get_date
 from    datetime                 import  datetime, date, timedelta
 from    astropy.time             import  Time, TimeDelta
 from    astropy.coordinates      import  SkyCoord, EarthLocation, AltAz
-from    whatprogram              import  whatprogram
+from    bgscmxsv.whatprogram     import  whatprogram
 from    astropy.table            import  Table
 from    astropy.io               import  ascii
-from    astropy.utils.exceptions import AstropyWarning
+from    astropy.utils.exceptions import  AstropyWarning
 
 # IERS range warning suppression.
 warnings.filterwarnings('ignore', category=AstropyWarning, append=True)
@@ -40,16 +40,19 @@ parser = argparse.ArgumentParser(usage = "{prog} [options]", description=descrip
 parser.add_argument("--tiles", type=str, help="input tile file", default=None)
 parser.add_argument("--bright", type=int,  default=0, help="solve for nights with bright time only (irrelevant when including twilight, integer).")
 parser.add_argument("--firstday", type=str,  default=get_date(datetime.now().date().isoformat()), help="first day considered")
-parser.add_argument("--lastday", type=str,  default='2021-02-01', help="last day considered")
+parser.add_argument("--lastday", type=str,  default='2021-06-01', help="last day considered")
 parser.add_argument("--outdir", type=str, required=False, default=None, help="path to output directory.")
 parser.add_argument("--fullmoonnights", type=int,  default=7, help="full moon shut down period (nights)")
 parser.add_argument("--twilight", type=int,  default=0, help="include twilight, integer.")
 parser.add_argument("--numproc", type=int,  default=4, help="number of processes in multiprocessing (~4-12)")
 parser.add_argument("--airmass", type=np.float,  default=2.0, help="Airmass limit to assume.")
+parser.add_argument("--ephemtable", type=str,  default='/global/cscratch1/sd/mjwilson/ephemtable/ephem_2019-01-01_2025-12-31.fits', help="Dir. to surveysim ephem table.")
 
 print('\n\nWelcome to up.\n\n')
 
 args             = parser.parse_args()
+
+exit(0)
 
 startclock       = time.time()
 
@@ -75,7 +78,7 @@ mayall           = desisurvey.utils.get_location()
 start            = datetime(year = 2019, month =  1,  day = 1)
 stop             = datetime(year = 2025, month = 12, day = 31)
 
-ephemtable       = Ephemerides(start.date(), stop.date(), restore='/global/cscratch1/sd/mjwilson/ephemtable/ephem_2019-01-01_2025-12-31.fits')
+ephemtable       = Ephemerides(start.date(), stop.date(), restore=args.ephemtable)
 
 num_nights       = (last - first).days
 
