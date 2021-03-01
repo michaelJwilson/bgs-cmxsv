@@ -31,7 +31,6 @@ from    astropy.utils.exceptions import  AstropyWarning
 # IERS range warning suppression.
 warnings.filterwarnings('ignore', category=AstropyWarning, append=True)
 
-
 description = 'print the hours available for each program (dark, gray, bright) for a range of nights;  if provided a tiles file, augment the input tiles file with the hours for which each is observable, for  each month, in each program; write a minimalist latex version of the tiles file, all to --outdir (required if tiles file provided).'
 
 parser = argparse.ArgumentParser(usage = "{prog} [options]", description=description)
@@ -60,6 +59,7 @@ config           = desisurvey.config.Configuration()
 first            = get_date(args.firstday)
 last             = get_date(args.lastday)
 
+# Minimum observable altitude for a tile.
 min_altitude     = config.min_altitude().value
 
 # List of exclusion bodies, e.g. with XXX deg. of the moon.  
@@ -70,6 +70,7 @@ for body in bodies:
   avoid_bodies[body] = getattr(config.avoid_bodies, body)().to(u.deg)
 
 ##  Planet exclusion evaluated at midnight, moon exclusion at each mjd.                                                                                                                                 
+##  Deal with 
 bodies.remove('moon')
 
 mayall           = desisurvey.utils.get_location()
@@ -85,7 +86,7 @@ num_nights       = (last - first).days
 if num_nights <= 0:
   raise ValueError('Invalid dates.')
 
-# Where will we collect the total # of hours, for the x3 (dark, grey, bright) programs independently. 
+# Where will we collect the total # of hours, for the x3 (dark, grey, bright) programs, independently. 
 hours            = np.zeros((3, num_nights))
                 
 ##  Choose same times as those solved for in ephem, but more finely sample than 1/hr due to twilight.
@@ -97,11 +98,11 @@ t_obj            = np.linspace(0., 1., N + 1)
 months           = []
 
 if args.tiles is not None:
-    tiles            = Table.read(args.tiles)
+    tiles = Table.read(args.tiles)
 
     try:
       # Apply normal cuts if passed nominal tiles file 
-      tiles          = tiles[tiles['IN_DESI'] > 0]
+      tiles = tiles[tiles['IN_DESI'] > 0]
 
       # TODO - Cut on pass. 
       
@@ -132,7 +133,7 @@ for i in range(num_nights):
     # Noon on this day in isoformat. 
     isonoon      = get_date(tonight)
 
-    # Cut by XXX day shut down around fullmoon, nominally 7 but args provided. 
+    # Cut by XXX day shut down around fullmoon, nominally 7 but set by args. provided. 
     fullmoon     = ephemtable.is_full_moon(isonoon)
 
     # Cut by expected downtime due to the Arizona monsoon. 
@@ -160,6 +161,7 @@ for i in range(num_nights):
       # Count the hours available to this program on this night. 
       hours[p, i]    += 24. * dt
 
+    # If solving only for bright time, skip if no bright time on this night. 
     if args.bright & (hours[2, i] == 0.0):
         continue
             
@@ -185,12 +187,13 @@ for i in range(num_nights):
     print('{}\t{}\t{}:\t{: 6.1f} Dark\t{: 6.1f}\tGray\t{: 6.1f}\tBright ({:.2f}% illumination).'.format(isonoon.isoformat(), localdusk, localdawn, hours[0, i] , hours[1, i] , hours[2, i], moonfrac))
     
     if args.tiles is None:
+        # If no tiles provided, only calculate the numbers of hours in the program on this night, as above. 
         continue
 
-    indices           = np.arange(len(ra))
+    indices = np.arange(len(ra))
     
-    ##  Planet exclusion for each tile evaluated at midnight, moon exclusion at each mjd.
     for body in bodies:
+        ##  Planet exclusion for each tile evaluated at midnight, moon exclusion at each mjd.
         bdec, bra = desisurvey.ephem.get_object_interpolator(row, body, altaz=False)(midnight)
 
         too_close = desisurvey.utils.separation_matrix([bra] * u.deg, [bdec] * u.deg, ra[indices] * u.deg, dec[indices] * u.deg, avoid_bodies[body])[0]
@@ -228,6 +231,7 @@ for i in range(num_nights):
 
         return  True, program, isin
 
+    # pool over number of time samples on this night.  
     tasks   = range(len(t_obj))
       
     # results = [process_onetime(j) for j in tasks]
