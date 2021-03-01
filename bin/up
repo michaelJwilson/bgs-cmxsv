@@ -48,7 +48,7 @@ parser.add_argument("--airmass", type=np.float,  default=2.0, help="Airmass limi
 parser.add_argument("--ephemtable", type=str,  default='/global/cscratch1/sd/mjwilson/ephemtable/ephem_2019-01-01_2025-12-31.fits', help="Dir. to surveysim ephem table produced by surveyinit.")
 parser.add_argument("--shallow", type=int,  default=1, help="Exit early without writing tiles file and plots.")
 
-print('\n\nWelcome to up.\n\n')
+print('\n\nWelcome to up.\n')
 
 args             = parser.parse_args()
 
@@ -107,7 +107,7 @@ if args.tiles is not None:
       # TODO - Cut on pass. 
       
     except:
-      print('\tWarning:  proceeding assuming custom tiles file.')
+      print('\tWarning:  proceeding assuming custom tiles file.\n')
 
     if 'TILEID' not in tiles.dtype.names:
       # Custom timefile. 
@@ -115,11 +115,11 @@ if args.tiles is not None:
       
     tiles.sort('RA')
 
-    ra               = tiles['RA']
-    dec              = tiles['DEC']
+    ra = tiles['RA']
+    dec = tiles['DEC']
 
     ##  For each tile, and each night, record the hrs visible in each program.
-    hrs_visible      = np.zeros(3 * len(ra) * num_nights, dtype=np.float).reshape(num_nights, len(ra), 3)
+    hrs_visible = np.zeros(3 * len(ra) * num_nights, dtype=np.float).reshape(num_nights, len(ra), 3)
     
     if args.outdir is None:
       raise ValueError('Provide --outdir when solving for tile program hours (tile file provided).')
@@ -181,11 +181,15 @@ for i in range(num_nights):
     LST0, LST1        = row['brightdusk_LST'], row['brightdawn_LST']
     dLST              = (LST1 - LST0) / (MJD1 - MJD0)
 
-    localdusk         = arizona.localize(Time(dusk, format='mjd').datetime).strftime(fmt)
-    localdawn         = arizona.localize(Time(dawn, format='mjd').datetime).strftime(fmt)               
-    
-    print('{}\t{}\t{}:\t{: 6.1f} Dark\t{: 6.1f}\tGray\t{: 6.1f}\tBright ({:.2f}% illumination).'.format(isonoon.isoformat(), localdusk, localdawn, hours[0, i] , hours[1, i] , hours[2, i], moonfrac))
-    
+    # Arizona = UTC - 7.
+    localdusk         = Time(dusk, format='mjd') - timedelta(hours=7)
+    localdawn         = Time(dawn, format='mjd') - timedelta(hours=7)
+
+    localdusk         = localdusk.isot.split('T')[-1] 
+    localdawn         = localdawn.isot.split('T')[-1]	
+        
+    print('{}\t{}\t{}:\t{: 6.1f} Dark\t{: 6.1f}\tGray\t{: 6.1f}\tBright ({:.2f}% illumination).'.format(isonoon.isoformat(), localdusk, localdawn,\
+                                                                                                        hours[0, i] , hours[1, i] , hours[2, i], moonfrac))    
     if args.tiles is None:
         # If no tiles provided, only calculate the numbers of hours in the program on this night, as above. 
         continue
