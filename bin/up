@@ -232,7 +232,7 @@ for i in range(num_nights):
         return  True, program, isin
 
     # pool over number of time samples on this night.  
-    tasks   = range(len(t_obj))
+    tasks = range(len(t_obj))
       
     # results = [process_onetime(j) for j in tasks]
     results = Pool(processes=args.numproc).map(process_onetime, range(len(t_obj)))
