@@ -132,19 +132,19 @@ if args.tiles is not None:
       raise ValueError('Provide --outdir when solving for tile program hours (tile file provided).')
 
 if args.verbose:
-    assert len(tiles) == 1, 'High verbosity hrs breakdown only defined for a single-tile input.'
+    assert  len(tiles) == 1, 'High verbosity hrs breakdown only defined for a single-tile input.'
     
 for i in range(num_nights):
-    tonight      = first + timedelta(days=i)
+    tonight = first + timedelta(days=i)
 
     # Noon on this day in isoformat. 
-    isonoon      = get_date(tonight)
+    isonoon = get_date(tonight)
 
     # Cut by XXX day shut down around fullmoon, nominally 7 but set by args. provided. 
-    fullmoon     = ephemtable.is_full_moon(isonoon)
+    fullmoon = ephemtable.is_full_moon(isonoon)
 
     # Cut by expected downtime due to the Arizona monsoon. 
-    monsoon      = desisurvey.utils.is_monsoon(isonoon)
+    monsoon = desisurvey.utils.is_monsoon(isonoon)
 
     if not isonoon.strftime("%B") in months:
       months.append(isonoon.strftime("%B"))
@@ -183,21 +183,28 @@ for i in range(num_nights):
     ##  Includes twilight.                                                                                                                                                                          
     bdusk             = row['brightdusk']
     bdawn             = row['brightdawn']
-
+    
     # Used to interpolate LST vs MJD dependence on this date. 
     MJD0, MJD1        = bdusk, bdawn
     LST0, LST1        = row['brightdusk_LST'], row['brightdawn_LST']
     dLST              = (LST1 - LST0) / (MJD1 - MJD0)
 
     # Arizona == (UTC - 7).
+    mrise             = Time(row['moonrise'], format='mjd') - timedelta(hours=7)
+    mset              = Time(row['moonset'], format='mjd') - timedelta(hours=7)
+
+    mrise             = mrise.isot.split('T')[-1]
+    mset              = mset.isot.split('T')[-1]
+    
     localdusk         = Time(dusk, format='mjd') - timedelta(hours=7)
     localdawn         = Time(dawn, format='mjd') - timedelta(hours=7)
 
     localdusk         = localdusk.isot.split('T')[-1] 
     localdawn         = localdawn.isot.split('T')[-1]	
         
-    print('{}\t{}\t{}:\t{: 6.3f} Dark\t{: 6.3f}\tGray\t{: 6.3f}\tBright ({:.2f}% illumination).'.format(isonoon.isoformat(), localdusk, localdawn,\
-                                                                                                        hours[0, i] , hours[1, i] , hours[2, i], moonfrac))    
+    print('{}\t{}\t{}:\t{: 6.3f} Dark\t{: 6.3f}\tGray\t{: 6.3f}\tBright ({:.2f}% illumination, moon rise: {}, moon set: {}).'.format(isonoon.isoformat(), localdusk, localdawn,\
+                                                                                                                                     hours[0, i] , hours[1, i] , hours[2, i], moonfrac,\
+                                                                                                                                     mrise, mset))    
     if args.tiles is None:
         # If no tiles provided, only calculate the numbers of hours in the program on this night, as above. 
         continue
@@ -263,14 +270,14 @@ for i in range(num_nights):
     losses = []
     
     for result in results:
-      success, program, isin, ishigh, not_close, good_airmass = result
+        success, program, isin, ishigh, not_close, good_airmass = result
 
-      # Between (b)dusk and (b)dawn. 
-      if success:
-        # [night, tile, program].
-        hrs_visible[i, isin, program] += dt   
+        # Between (b)dusk and (b)dawn. 
+        if success:
+            # [night, tile, program].
+            hrs_visible[i, isin, program] += dt   
 
-        losses.append([ishigh, not_close, good_airmass])
+            losses.append([ishigh, not_close, good_airmass])
 
     losses = np.array(losses)
 
