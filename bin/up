@@ -13,7 +13,6 @@ import  astropy.units            as      u
 import  pylab                    as      pl
 import  matplotlib.pyplot        as      plt
 
-from    pytz                     import  timezone
 from    multiprocessing          import  Pool, Array
 from    desisurvey.utils         import  get_location
 from    desisurvey.ephem         import  get_ephem
@@ -47,6 +46,8 @@ parser.add_argument("--numproc", type=int,  default=4, help="number of processes
 parser.add_argument("--airmass", type=np.float,  default=2.0, help="Airmass limit to assume.")
 parser.add_argument("--ephemtable", type=str,  default='/global/cscratch1/sd/mjwilson/ephemtable/ephem_2019-01-01_2025-12-31.fits', help="Dir. to surveysim ephem table produced by surveyinit.")
 parser.add_argument("--shallow", type=int,  default=1, help="Exit early without writing tiles file and plots.")
+parser.add_argument("--verbose", type=int,  default=0, help="High verbosity breakdown of hours evaluation.")
+parser.add_argument("--sampling", type=int,  default=96, help="Number of time samples assumed in 24 hours..")
 
 print('\n\nWelcome to up.\n')
 
@@ -61,6 +62,16 @@ last             = get_date(args.lastday)
 
 # Minimum observable altitude for a tile.
 min_altitude     = config.min_altitude().value
+
+print('Minimum latitude: {:.4f}'.format(min_altitude))
+
+##  Choose same times as those solved for in ephem, but more finely sample than 1/hr due to twilight.                                                                                                                                      
+##  Number of samples in 24 hrs.                                                                                                                                                                                                           
+N                = args.sampling
+dt               = 24. / N
+t_obj            = np.linspace(0., 1., N)
+
+print('Assuming {:d} samples of interval {:.6f} hrs'.format(len(t_obj), dt))
 
 # List of exclusion bodies, e.g. with XXX deg. of the moon.  
 avoid_bodies     = {}
@@ -83,18 +94,14 @@ ephemtable       = Ephemerides(start.date(), stop.date(), restore=args.ephemtabl
 
 num_nights       = (last - first).days
 
-if num_nights <= 0:
-  raise ValueError('Invalid dates.')
+print('Solving for {:d} nights.'.format(num_nights))
 
-# Where will we collect the total # of hours, for the x3 (dark, grey, bright) programs, independently. 
+if num_nights <= 0:
+    raise ValueError('Invalid dates.')
+
+# Where we collect the total # of available hours for a NIGHT, for the x3 (dark, grey, bright) programs, independently. 
 hours            = np.zeros((3, num_nights))
                 
-##  Choose same times as those solved for in ephem, but more finely sample than 1/hr due to twilight.
-##  Number of samples in 24 hrs.  
-N                = 48
-dt               = 24. / N
-t_obj            = np.linspace(0., 1., N + 1)
-
 months           = []
 
 if args.tiles is not None:
@@ -123,10 +130,10 @@ if args.tiles is not None:
     
     if args.outdir is None:
       raise ValueError('Provide --outdir when solving for tile program hours (tile file provided).')
-    
-arizona          = timezone('US/Arizona') 
-fmt              = '%H:%M:%S %Z%z' 
 
+if args.verbose:
+    assert len(tiles) == 1, 'High verbosity hrs breakdown only defined for a single-tile input.'
+    
 for i in range(num_nights):
     tonight      = first + timedelta(days=i)
 
@@ -157,9 +164,9 @@ for i in range(num_nights):
     ##  Note:  Augmented with (b)dusk, (b)dawn at either end.
     programs, changes = ephemtable.get_night_program(isonoon, include_twilight=args.twilight, program_as_int=True)
     
-    for p, dt in zip(programs, np.diff(changes)):
+    for p, pdt in zip(programs, np.diff(changes)):
       # Count the hours available to this program on this night. 
-      hours[p, i]    += 24. * dt
+      hours[p, i]    += 24. * pdt
 
     # If solving only for bright time, skip if no bright time on this night. 
     if args.bright & (hours[2, i] == 0.0):
@@ -173,22 +180,23 @@ for i in range(num_nights):
     ##  Assume this does not vary much during the night.
     moonfrac          = row['moon_illum_frac']
     
-    ##  Includes twilight.                                                                                                                                                                                   
+    ##  Includes twilight.                                                                                                                                                                          
     bdusk             = row['brightdusk']
     bdawn             = row['brightdawn']
-    
+
+    # Used to interpolate LST vs MJD dependence on this date. 
     MJD0, MJD1        = bdusk, bdawn
     LST0, LST1        = row['brightdusk_LST'], row['brightdawn_LST']
     dLST              = (LST1 - LST0) / (MJD1 - MJD0)
 
-    # Arizona = UTC - 7.
+    # Arizona == (UTC - 7).
     localdusk         = Time(dusk, format='mjd') - timedelta(hours=7)
     localdawn         = Time(dawn, format='mjd') - timedelta(hours=7)
 
     localdusk         = localdusk.isot.split('T')[-1] 
     localdawn         = localdawn.isot.split('T')[-1]	
         
-    print('{}\t{}\t{}:\t{: 6.1f} Dark\t{: 6.1f}\tGray\t{: 6.1f}\tBright ({:.2f}% illumination).'.format(isonoon.isoformat(), localdusk, localdawn,\
+    print('{}\t{}\t{}:\t{: 6.3f} Dark\t{: 6.3f}\tGray\t{: 6.3f}\tBright ({:.2f}% illumination).'.format(isonoon.isoformat(), localdusk, localdawn,\
                                                                                                         hours[0, i] , hours[1, i] , hours[2, i], moonfrac))    
     if args.tiles is None:
         # If no tiles provided, only calculate the numbers of hours in the program on this night, as above. 
@@ -197,23 +205,25 @@ for i in range(num_nights):
     indices = np.arange(len(ra))
     
     for body in bodies:
-        ##  Planet exclusion for each tile evaluated at midnight, moon exclusion at each mjd.
+        ##  Planet exclusion for each tile evaluated at midnight, moon exclusion later at each mjd.
         bdec, bra = desisurvey.ephem.get_object_interpolator(row, body, altaz=False)(midnight)
 
         too_close = desisurvey.utils.separation_matrix([bra] * u.deg, [bdec] * u.deg, ra[indices] * u.deg, dec[indices] * u.deg, avoid_bodies[body])[0]
         indices   = indices[~too_close]
 
+        if args.verbose and np.any(too_close):
+            print('\tVERBOSE:  Excluded by {}.'.format(body))
+        
     def process_onetime(j):
         ##  On this day, enumerate over the time samples.
         mjd       = row['noon'] + t_obj[j]
-
-        ##  Include twilight currently.                                                                                                                                                                         
-        if (mjd < bdusk) or (mjd > bdawn):
-            return  False, None, None
+        
+        ##  Include twilight currently.                                                                                                                                                                    
+        if (mjd < dusk) or (mjd > dawn):
+            return  False, None, None, None, None, None
 
         program   = whatprogram(mjd, programs, changes)
-        _time     = Time(mjd, format='mjd')                                                                                                                                                                  
-        pos       = SkyCoord(ra = ra[indices] * u.degree, dec = dec[indices] * u.degree, frame='icrs').transform_to(AltAz(obstime=_time, location=mayall))
+        pos       = SkyCoord(ra = ra[indices] * u.degree, dec = dec[indices] * u.degree, frame='icrs').transform_to(AltAz(obstime=Time(mjd, format='mjd'), location=mayall))
         alt       = pos.alt.degree
 
         # Cut on min. altitude assumed. 
@@ -224,16 +234,25 @@ for i in range(num_nights):
         LST       = LST0 + dLST * (mjd - MJD0)
         hourangle = LST - ra
 
-        # Cut on moon exclusion.
-        bdec, bra = desisurvey.ephem.get_object_interpolator(row, 'moon', altaz=False)(mjd)
-        too_close = desisurvey.utils.separation_matrix([bra] * u.deg, [bdec] * u.deg, ra[isin] * u.deg, dec[isin] * u.deg, avoid_bodies['moon'])[0]
-        isin      = isin[~too_close]
+        if len(ra[isin] > 0):
+          # Cut on moon exclusion.
+          bdec, bra = desisurvey.ephem.get_object_interpolator(row, 'moon', altaz=False)(mjd)
+          not_close = ~desisurvey.utils.separation_matrix([bra] * u.deg, [bdec] * u.deg, ra[isin] * u.deg, dec[isin] * u.deg, avoid_bodies['moon'])[0]
+          isin      = isin[not_close]
 
-        # Cut on airmass. 
-        airmasses = desisurvey.utils.get_airmass(_time, ra[isin] * u.deg, dec[isin] * u.deg)
-        isin      = isin[airmasses < args.airmass]
+        else:
+          not_close = np.array([np.NaN])
+          
+        if len(ra[isin] > 0):        
+          # Cut on airmass. 
+          airmasses    = desisurvey.utils.get_airmass(Time(mjd, format='mjd'), ra[isin] * u.deg, dec[isin] * u.deg)
+          good_airmass = airmasses < args.airmass 
+          isin         = isin[good_airmass]
 
-        return  True, program, isin
+        else:
+          good_airmass = np.array([np.NaN])
+          
+        return  True, program, isin, ishigh[0], not_close[0], good_airmass[0]
 
     # pool over number of time samples on this night.  
     tasks = range(len(t_obj))
@@ -241,13 +260,38 @@ for i in range(num_nights):
     # results = [process_onetime(j) for j in tasks]
     results = Pool(processes=args.numproc).map(process_onetime, range(len(t_obj)))
 
+    losses = []
+    
     for result in results:
-      success, program, isin = result
+      success, program, isin, ishigh, not_close, good_airmass = result
 
+      # Between brightdusk and brightdawn. 
       if success:
         # [night, tile, program].
         hrs_visible[i, isin, program] += dt   
-    
+
+        losses.append([ishigh, not_close, good_airmass])
+
+    losses = np.array(losses)
+
+    mask   = losses == np.NaN
+    losses = losses.astype(np.float)
+    losses[mask] = np.NaN
+        
+    if args.verbose:
+        rates = {}
+      
+        for index, tt in zip(np.arange(3), ['Altitude', 'Lunar', 'Airmass']):          
+            if np.all(np.isnan(losses[:,index])):
+              rates[tt] = np.NaN
+              
+            else:
+              rates[tt] = 100. * np.nanmean(losses[:,index])
+
+        # print(losses)
+              
+        print('\tGood altitude: {:.2f}%;  (Conditional) Good lunar separation: {:.2f}%;  (Conditional) Good airmass: {:.2f}%'.format(rates['Altitude'], rates['Lunar'], rates['Airmass']))
+        
 if args.tiles is None:
     endclock = time.time()
 
