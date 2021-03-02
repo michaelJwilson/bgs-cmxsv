@@ -63,7 +63,7 @@ last             = get_date(args.lastday)
 # Minimum observable altitude for a tile.
 min_altitude     = config.min_altitude().value
 
-print('Minimum latitude: {:.4f}'.format(min_altitude))
+print('Minimum altitude: {:.4f}'.format(min_altitude))
 
 ##  Choose same times as those solved for in ephem, but more finely sample than 1/hr due to twilight.                                                                                                                                      
 ##  Number of samples in 24 hrs.                                                                                                                                                                                                           
