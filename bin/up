@@ -44,6 +44,7 @@ parser.add_argument("--fullmoonnights", type=int,  default=7, help="full moon sh
 parser.add_argument("--twilight", type=int,  default=0, help="include twilight, integer.")
 parser.add_argument("--numproc", type=int,  default=4, help="number of processes in multiprocessing (~4-12)")
 parser.add_argument("--airmass", type=np.float,  default=2.0, help="Airmass limit to assume.")
+parser.add_argument("--hourangle", type=np.float,  default=1.5, help="Hour angle limit.")
 parser.add_argument("--ephemtable", type=str,  default='/global/cscratch1/sd/mjwilson/ephemtable/ephem_2019-01-01_2025-12-31.fits', help="Dir. to surveysim ephem table produced by surveyinit.")
 parser.add_argument("--shallow", type=int,  default=1, help="Exit early without writing tiles file and plots.")
 parser.add_argument("--verbose", type=int,  default=0, help="High verbosity breakdown of hours evaluation.")
@@ -227,20 +228,24 @@ for i in range(num_nights):
         
         ##  Include twilight currently.                                                                                                                                                                    
         if (mjd < dusk) or (mjd > dawn):
-            return  False, None, None, None, None, None
+            return  False, None, None, None, None, None, None
 
         program   = whatprogram(mjd, programs, changes)
         pos       = SkyCoord(ra = ra[indices] * u.degree, dec = dec[indices] * u.degree, frame='icrs').transform_to(AltAz(obstime=Time(mjd, format='mjd'), location=mayall))
         alt       = pos.alt.degree
 
-        # Cut on min. altitude assumed. 
-        ishigh    = alt > min_altitude
-        isin      = indices[ishigh]
-
-        ##  Calculate the local apparent sidereal time in degrees.
+        ##  Calculate the local apparent sidereal time in degrees.                                                                                                                                                                         
         LST       = LST0 + dLST * (mjd - MJD0)
         hourangle = LST - ra
+        
+        # Cut on min. altitude assumed. 
+        ishigh    = alt > min_altitude
 
+        # Cut on hour angle.
+        isnear    = hourangle < (15. * args.hourangle)
+        
+        isin      = indices[ishigh & isnear]
+        
         if len(ra[isin] > 0):
           # Cut on moon exclusion.
           bdec, bra = desisurvey.ephem.get_object_interpolator(row, 'moon', altaz=False)(mjd)
@@ -259,7 +264,7 @@ for i in range(num_nights):
         else:
           good_airmass = np.array([np.NaN])
           
-        return  True, program, isin, ishigh[0], not_close[0], good_airmass[0]
+        return  True, program, isin, ishigh[0], isnear[0], not_close[0], good_airmass[0]
 
     # pool over number of time samples on this night.  
     tasks = range(len(t_obj))
@@ -270,14 +275,14 @@ for i in range(num_nights):
     losses = []
     
     for result in results:
-        success, program, isin, ishigh, not_close, good_airmass = result
+        success, program, isin, ishigh, isnear, not_close, good_airmass = result
 
         # Between (b)dusk and (b)dawn. 
         if success:
             # [night, tile, program].
             hrs_visible[i, isin, program] += dt   
 
-            losses.append([ishigh, not_close, good_airmass])
+            losses.append([ishigh, isnear, not_close, good_airmass])
 
     losses = np.array(losses)
 
@@ -288,7 +293,7 @@ for i in range(num_nights):
     if args.verbose:
         rates = {}
       
-        for index, tt in zip(np.arange(3), ['Altitude', 'Lunar', 'Airmass']):          
+        for index, tt in zip(np.arange(4), ['Altitude', 'Hour angle', 'Lunar', 'Airmass']):          
             if np.all(np.isnan(losses[:,index])):
               rates[tt] = np.NaN
               
@@ -297,7 +302,10 @@ for i in range(num_nights):
 
         # print(losses)
               
-        print('\tGood altitude: {:.2f}%;  (Conditional) Good lunar separation: {:.2f}%;  (Conditional) Good airmass: {:.2f}%'.format(rates['Altitude'], rates['Lunar'], rates['Airmass']))
+        print('\tGood altitude: {:.2f}%;  Good hour angle: {:.2f}%;  (Conditional) Good lunar separation: {:.2f}%;  (Conditional) Good airmass: {:.2f}%'.format(rates['Altitude'],\
+                                                                                                                                                                rates['Hour angle'],\
+                                                                                                                                                                rates['Lunar'],\
+                                                                                                                                                                rates['Airmass']))
         
 if args.tiles is None:
     endclock = time.time()
