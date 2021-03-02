@@ -265,7 +265,7 @@ for i in range(num_nights):
     for result in results:
       success, program, isin, ishigh, not_close, good_airmass = result
 
-      # Between brightdusk and brightdawn. 
+      # Between (b)dusk and (b)dawn. 
       if success:
         # [night, tile, program].
         hrs_visible[i, isin, program] += dt   
